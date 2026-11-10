@@ -1,0 +1,52 @@
+name: Access request
+description: Ask for the collaborator invitation, so you can claim one district.
+title: "Access request"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run the preflight first. It needs no access.
+
+        `python scripts/redraw_tile.py --preflight`
+
+        Do not paste keys, tokens, or paths from your machine.
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and VRAM
+      placeholder: RTX 4090, 24 GB
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: preflight
+    attributes:
+      label: Preflight line
+      description: The line the preflight printed.
+      placeholder: "preflight: ok (NVIDIA GeForce RTX 4090)"
+    validations:
+      required: true
+  - type: dropdown
+    id: render
+    attributes:
+      label: Do you have a source render for a district?
+      options:
+        - "Yes"
+        - "No, I need one"
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Terms
+      options:
+        - label: I have read CONTRIBUTING.md. My tile is contributed under the MIT license and may be shown on karta.opensverige.se, credited to my GitHub account.
+          required: true

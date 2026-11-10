@@ -6,13 +6,15 @@ You do not receive API keys, tokens, SSH keys, or any other project. You clone t
 
 Districts are the 290 municipalities in `districts.json`. One district per claim. The result path is `results/<district>.png`.
 
-The owner invites your GitHub account as a collaborator. That invitation is the only access. You need write access so the claim can be pushed.
+The owner invites your GitHub account as a collaborator. That invitation is the only access. You need write access so the claim can be pushed. Ask for it with an [access request](https://github.com/Baltsar/karta.opensverige-3d/issues/new?template=access-request.yml).
+
+The rules, the license, and how you are credited are in [CONTRIBUTING.md](CONTRIBUTING.md). An AI agent reads [AGENTS.md](AGENTS.md) before it runs anything.
 
 Model weights are not in this repo. The redraw downloads them into the Hugging Face cache on your machine.
 
 ## 0. Check the machine
 
-NVIDIA CUDA is required for the redraw. The 4-bit checkpoint is a bitsandbytes quant.
+NVIDIA CUDA is required for the redraw. The 4-bit checkpoint is a bitsandbytes quant. The door is aimed at 24 GB cards. On the maintainer's RTX 5070 one tile takes about an hour.
 
 ```bash
 python scripts/redraw_tile.py --preflight
@@ -44,7 +46,7 @@ python scripts/claim_district.py --list
 python scripts/claim_district.py --district stockholm
 ```
 
-Pick any free slug. Do not all take the first line. The script commits only `claims/<district>.md` and pushes it. If the push is rejected, that district is gone: `--list` again and choose another. Details are in `CLAIM.md`.
+Have your source render ready first (step 3), so the district does not sit locked and waiting. Pick any free slug. Do not all take the first line. The script commits only `claims/<district>.md` and pushes it. If the push is rejected, that district is gone: `--list` again and choose another. Details are in `CLAIM.md`.
 
 ## 3. Source image
 
@@ -144,7 +146,7 @@ The price check and the claim list do not need a GPU. The redraw does not run un
 
 Environment files, private keys, tokens, model weights, and files under `inputs/`. A pull request may only add `claims/<district>.md` or `results/<district>.png`, or delete a claim when a district is released.
 
-PNG files you publish are contributed to this repository under the MIT license. The model weights stay under their own licenses.
+PNG files you publish are contributed to this repository under the MIT license, and may be shown on karta.opensverige.se, credited to your GitHub account. The model weights stay under their own licenses. The Qwen Research License grants non-commercial use only. Details are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Local checks
 
