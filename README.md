@@ -155,3 +155,5 @@ This does not download the model:
 ```bash
 python -m unittest tests/test_door.py
 ```
+
+Door test line. This change must be rejected.
