@@ -54,15 +54,22 @@ def pull_request_change_ok(status: str, path: str, districts: Collection[str]) -
     return False
 
 
-def contributor_event(event: str, actor: str, owner: str) -> bool:
+def _is_owner(login: str, owner: str) -> bool:
+    return bool(login) and bool(owner) and login.lower() == owner.lower()
+
+
+def contributor_event(event: str, actor: str, owner: str, pr_author: str = "") -> bool:
     """True when the change comes from a contributor and must stay inside the door.
 
     Contributors push to the shared branch, so a pull request is not the only way in.
     The owner's own pushes carry the docs and scripts and are not held to the allowlist.
+    Neither is a pull request the owner opened, while the owner is also the one who
+    triggered this run. Both names are needed: a contributor's push to the owner's pull
+    request is judged, and so is a contributor's pull request the owner reopens.
     """
     if event in PULL_REQUEST_EVENTS:
-        return True
-    return event == "push" and bool(actor) and bool(owner) and actor.lower() != owner.lower()
+        return not (_is_owner(pr_author, owner) and _is_owner(actor, owner))
+    return event == "push" and bool(actor) and bool(owner) and not _is_owner(actor, owner)
 
 
 def claim_problem(text: str, slug: str, row: dict) -> str | None:
@@ -139,7 +146,8 @@ def _zero(sha: str | None) -> bool:
     return set(sha) <= {"0"}
 
 
-def diff_problems(root: Path, base: str, head: str, districts: dict[str, dict]) -> list[str]:
+def changed_paths(root: Path, base: str, head: str) -> list[tuple[str, str]] | None:
+    """Status and path of every file the change touches, or None when git cannot compare."""
     result = subprocess.run(
         ["git", "diff", "--name-status", f"{base}...{head}"],
         cwd=root,
@@ -148,13 +156,37 @@ def diff_problems(root: Path, base: str, head: str, districts: dict[str, dict]) 
         capture_output=True,
     )
     if result.returncode != 0:
-        return [f"Could not diff {base}...{head}"]
-    problems = []
+        return None
+    changes = []
     for line in result.stdout.splitlines():
         parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        status, path = parts[0], parts[-1]
+        if len(parts) >= 2:
+            changes.append((parts[0], parts[-1]))
+    return changes
+
+
+def secret_problems(root: Path, base: str, head: str) -> list[str]:
+    """Secret-like files a change adds. The owner's pull request is held to this part.
+
+    The workflow checks out the base branch, so scan_tree never sees a pull request.
+    """
+    changes = changed_paths(root, base, head)
+    if changes is None:
+        return [f"Could not diff {base}...{head}"]
+    problems = []
+    for status, path in changes:
+        reason = forbidden_reason(path)
+        if reason and status != "D":
+            problems.append(f"{path} ({reason})")
+    return problems
+
+
+def diff_problems(root: Path, base: str, head: str, districts: dict[str, dict]) -> list[str]:
+    changes = changed_paths(root, base, head)
+    if changes is None:
+        return [f"Could not diff {base}...{head}"]
+    problems = []
+    for status, path in changes:
         reason = forbidden_reason(path)
         if reason:
             problems.append(f"{path} ({reason})")
@@ -178,23 +210,32 @@ def main() -> int:
     event = os.environ.get("EVENT", "")
     actor = os.environ.get("ACTOR", "")
     owner = os.environ.get("OWNER", "")
-    if contributor_event(event, actor, owner):
-        base = os.environ.get("BASE_SHA", "")
-        head = os.environ.get("HEAD_SHA", "")
+    pr_author = os.environ.get("PR_AUTHOR", "")
+    base = os.environ.get("BASE_SHA", "")
+    head = os.environ.get("HEAD_SHA", "")
+    pull_request = event in PULL_REQUEST_EVENTS
+    contributor = contributor_event(event, actor, owner, pr_author)
+    if contributor or pull_request:
         default_branch = os.environ.get("DEFAULT_BRANCH", "")
         # A first push to a new branch has no previous revision. Compare it with the default branch.
         if _zero(base) and event == "push" and default_branch:
             base = f"origin/{default_branch}"
         if _zero(base) or _zero(head):
             problems.append("This change has no base or head revision to compare.")
-        else:
+        elif contributor:
             problems.extend(diff_problems(root, base, head, load_districts(root)))
+        else:
+            problems.extend(secret_problems(root, base, head))
+    what = "pull request" if pull_request else "push"
     if problems:
-        print("This push is outside the contributor door:", file=sys.stderr)
+        print(f"This {what} does not pass the door check:", file=sys.stderr)
         for problem in problems:
             print(f"- {problem}", file=sys.stderr)
         return 1
-    print("door check: ok")
+    if pull_request and not contributor:
+        print("door check: ok (the owner's pull request, not held to the contributor allowlist)")
+    else:
+        print("door check: ok")
     return 0
 
 

@@ -155,11 +155,22 @@ class DoorPolicyTests(unittest.TestCase):
         self.assertEqual(check_push.scan_tree(ROOT), [])
 
     def test_contributor_events(self):
-        self.assertTrue(check_push.contributor_event("pull_request_target", "guest", "Owner"))
-        self.assertTrue(check_push.contributor_event("pull_request", "Owner", "Owner"))
+        self.assertTrue(check_push.contributor_event("pull_request_target", "guest", "Owner", "guest"))
         self.assertTrue(check_push.contributor_event("push", "guest", "Owner"))
         self.assertFalse(check_push.contributor_event("push", "owner", "Owner"))
         self.assertFalse(check_push.contributor_event("", "", ""))
+
+    def test_only_the_owners_own_pull_request_skips_the_allowlist(self):
+        # The owner opened it, and the owner triggered this run.
+        self.assertFalse(check_push.contributor_event("pull_request_target", "owner", "Owner", "Owner"))
+        # A contributor pushed to the owner's pull request.
+        self.assertTrue(check_push.contributor_event("pull_request_target", "guest", "Owner", "Owner"))
+        # The owner reopened, or pushed to, a contributor's pull request.
+        self.assertTrue(check_push.contributor_event("pull_request_target", "Owner", "Owner", "guest"))
+        # A missing name never counts as the owner.
+        self.assertTrue(check_push.contributor_event("pull_request_target", "Owner", "Owner"))
+        self.assertTrue(check_push.contributor_event("pull_request_target", "Owner", "", "Owner"))
+        self.assertTrue(check_push.contributor_event("pull_request_target", "", "", ""))
 
     def test_claim_doc_shows_the_real_claim_file(self):
         row = load_districts(ROOT)["stockholm"]
@@ -296,6 +307,25 @@ class GitDoorTests(unittest.TestCase):
         self.assertEqual(len(problems), 2)
         self.assertTrue(any("results/malmo.png must be a regular file" in problem for problem in problems))
         self.assertTrue(any("scripts/redraw_tile.py is not allowed" in problem for problem in problems))
+
+    def test_owner_pull_request_is_still_scanned_for_secret_files(self):
+        base = self.head()
+        (self.root / "scripts").mkdir()
+        (self.root / "scripts" / "redraw_tile.py").write_text("print('changed')\n", encoding="utf-8")
+        self.git("add", "scripts/redraw_tile.py")
+        self.git("commit", "-m", "owner change")
+        self.assertEqual(check_push.secret_problems(self.root, base, "HEAD"), [])
+        (self.root / ".env").write_text("TOKEN=1\n", encoding="utf-8")
+        (self.root / "scripts" / "server.pem").write_text("key\n", encoding="utf-8")
+        self.git("add", "-f", ".env", "scripts/server.pem")
+        self.git("commit", "-m", "owner mistake")
+        self.assertEqual(
+            sorted(check_push.secret_problems(self.root, base, "HEAD")),
+            [".env (environment file)", "scripts/server.pem (key file)"],
+        )
+        self.git("rm", "-q", ".env", "scripts/server.pem")
+        self.git("commit", "-m", "owner cleanup")
+        self.assertEqual(check_push.secret_problems(self.root, self.git("rev-parse", "HEAD~1").strip(), "HEAD"), [])
 
 
 if __name__ == "__main__":
