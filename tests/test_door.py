@@ -21,7 +21,7 @@ import claim_district  # noqa: E402
 import publish_png  # noqa: E402
 import redraw_tile  # noqa: E402
 import se3_price  # noqa: E402
-from repo import load_districts  # noqa: E402
+from repo import claim_text, load_districts  # noqa: E402
 
 STOCKHOLM = ZoneInfo("Europe/Stockholm")
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
@@ -154,6 +154,19 @@ class DoorPolicyTests(unittest.TestCase):
     def test_this_repo_has_no_forbidden_files(self):
         self.assertEqual(check_push.scan_tree(ROOT), [])
 
+    def test_contributor_events(self):
+        self.assertTrue(check_push.contributor_event("pull_request_target", "guest", "Owner"))
+        self.assertTrue(check_push.contributor_event("pull_request", "Owner", "Owner"))
+        self.assertTrue(check_push.contributor_event("push", "guest", "Owner"))
+        self.assertFalse(check_push.contributor_event("push", "owner", "Owner"))
+        self.assertFalse(check_push.contributor_event("", "", ""))
+
+    def test_claim_doc_shows_the_real_claim_file(self):
+        row = load_districts(ROOT)["stockholm"]
+        expected = claim_text("stockholm", row, "2026-11-09T17:35:00+00:00")
+        doc = (ROOT / "CLAIM.md").read_text(encoding="utf-8")
+        self.assertIn("```\n" + expected + "```", doc)
+
 
 class GitDoorTests(unittest.TestCase):
     def setUp(self):
@@ -163,10 +176,11 @@ class GitDoorTests(unittest.TestCase):
         self.git("config", "user.email", "door-test@example.com")
         self.git("config", "commit.gpgsign", "false")
         shutil.copy(ROOT / "districts.json", self.root / "districts.json")
+        shutil.copy(ROOT / ".gitattributes", self.root / ".gitattributes")
         (self.root / "claims").mkdir()
         (self.root / "results").mkdir()
         (self.root / "README.md").write_text("base\n", encoding="utf-8")
-        self.git("add", "districts.json", "README.md")
+        self.git("add", "districts.json", ".gitattributes", "README.md")
         self.git("commit", "-m", "base")
 
     def tearDown(self):
@@ -212,6 +226,76 @@ class GitDoorTests(unittest.TestCase):
         (self.root / "results" / "lund.png").write_text("not a png", encoding="utf-8")
         with self.assertRaises(SystemExit):
             publish_png.publish_png(self.root, "lund", push=False)
+
+    def head(self):
+        return self.git("rev-parse", "HEAD").strip()
+
+    def door(self, base):
+        return check_push.diff_problems(self.root, base, "HEAD", load_districts(self.root))
+
+    def test_door_passes_a_scripted_claim_and_tile(self):
+        base = self.head()
+        claim_district.claim_district(self.root, "stockholm", push=False)
+        (self.root / "results" / "stockholm.png").write_bytes(PNG)
+        publish_png.publish_png(self.root, "stockholm", push=False)
+        self.assertEqual(self.door(base), [])
+
+    def test_door_passes_a_release(self):
+        claim_district.claim_district(self.root, "uppsala", push=False)
+        base = self.head()
+        claim_district.release_claim(self.root, "uppsala", push=False)
+        self.assertEqual(self.door(base), [])
+
+    def test_door_rejects_a_tile_that_is_not_a_png(self):
+        base = self.head()
+        (self.root / "results" / "lund.png").write_text("<html>", encoding="utf-8")
+        self.git("add", "results/lund.png")
+        self.git("commit", "-m", "fake tile")
+        problems = self.door(base)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("is not a PNG", problems[0])
+
+    def test_door_rejects_a_hand_edited_claim(self):
+        claim_district.claim_district(self.root, "uppsala", push=False)
+        base = self.head()
+        claim = self.root / "claims" / "uppsala.md"
+        with claim.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write("machine: my-rig\n")
+        self.git("add", "claims/uppsala.md")
+        self.git("commit", "-m", "edit claim")
+        problems = self.door(base)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("Do not edit claims by hand", problems[0])
+
+    def test_door_rejects_a_claim_for_another_district(self):
+        base = self.head()
+        row = load_districts(self.root)["lund"]
+        claim = self.root / "claims" / "malmo.md"
+        claim.write_text(claim_text("lund", row, "2026-11-09T17:35:00+00:00"), encoding="utf-8", newline="\n")
+        self.git("add", "claims/malmo.md")
+        self.git("commit", "-m", "wrong claim")
+        self.assertEqual(len(self.door(base)), 1)
+
+    def test_door_rejects_a_symlink_and_files_outside_the_door(self):
+        base = self.head()
+        # Build the symlink entry in the index, so the test also runs where the OS cannot create one.
+        blob = subprocess.run(
+            ["git", "hash-object", "-w", "--stdin"],
+            cwd=self.root,
+            input="../README.md",
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        self.git("update-index", "--add", "--cacheinfo", f"120000,{blob},results/malmo.png")
+        (self.root / "scripts").mkdir()
+        (self.root / "scripts" / "redraw_tile.py").write_text("print('changed')\n", encoding="utf-8")
+        self.git("add", "scripts/redraw_tile.py")
+        self.git("commit", "-m", "outside the door")
+        problems = self.door(base)
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(any("results/malmo.png must be a regular file" in problem for problem in problems))
+        self.assertTrue(any("scripts/redraw_tile.py is not allowed" in problem for problem in problems))
 
 
 if __name__ == "__main__":

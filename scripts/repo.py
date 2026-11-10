@@ -26,6 +26,24 @@ def load_districts(root: Path | None = None) -> dict[str, dict]:
     return districts
 
 
+def claim_text(slug: str, row: dict, claimed_at: str) -> str:
+    """The exact claim file. The door check rejects a claim that differs from this."""
+    return "\n".join(
+        [
+            "# Claim",
+            "",
+            f"district: {slug}",
+            f"name: {row['name']}",
+            f"code: {row['code']}",
+            "status: claimed",
+            f"claimed_at: {claimed_at}",
+            "",
+            f"One district, one agent. The only result file for this claim is results/{slug}.png.",
+            "",
+        ]
+    )
+
+
 def run_git(root: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", *args],

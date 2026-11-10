@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from repo import branch_name, git_out, has_origin, load_districts, repo_root, require_identity, run_git
+from repo import branch_name, claim_text, git_out, has_origin, load_districts, repo_root, require_identity, run_git
 
 
 def _print_list(root: Path) -> int:
@@ -75,23 +75,7 @@ def claim_district(root: Path, slug: str, push: bool = True) -> int:
     row = districts[slug]
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     claim.parent.mkdir(parents=True, exist_ok=True)
-    claim.write_text(
-        "\n".join(
-            [
-                "# Claim",
-                "",
-                f"district: {slug}",
-                f"name: {row['name']}",
-                f"code: {row['code']}",
-                "status: claimed",
-                f"claimed_at: {now}",
-                "",
-                f"One district, one agent. The only result file for this claim is results/{slug}.png.",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    claim.write_text(claim_text(slug, row, now), encoding="utf-8", newline="\n")
     require_identity(root)
     run_git(root, ["add", "--", f"claims/{slug}.md"])
     staged = [line for line in git_out(root, ["diff", "--cached", "--name-only"]).splitlines() if line]
