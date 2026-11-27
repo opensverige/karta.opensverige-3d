@@ -12,6 +12,7 @@ import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from rutor import api, commands, config, pipeline
@@ -224,8 +225,135 @@ class MachineTests(_Env):
         self.assertIn("Do not claim", str(problem))
 
     def test_no_nvidia_card_is_missing(self) -> None:
-        with patch("sys.platform", "linux"), patch.object(commands, "_nvidia_cards", return_value=[]):
+        with (
+            patch("sys.platform", "linux"),
+            patch.object(commands, "_nvidia_cards", return_value=[]),
+            patch.object(commands, "_amd_cards", return_value=[]),
+        ):
             self.assertIn("no NVIDIA card", str(commands._gpu_missing()))
+
+    def test_an_amd_card_counts_on_a_machine_without_an_nvidia_card(self) -> None:
+        with (
+            patch("sys.platform", "linux"),
+            patch.object(commands, "_nvidia_cards", return_value=[]),
+            patch.object(commands, "kfd_usable", return_value=True),
+        ):
+            with patch.object(commands, "_amd_cards", return_value=[("AMD gfx1151", 29437)]):
+                self.assertIsNone(commands._gpu_missing())
+                self.assertEqual(commands.gpu_card(), ("amd", "AMD gfx1151", 29437))
+            with patch.object(commands, "_amd_cards", return_value=[("AMD gfx1030", 8176)]):
+                self.assertIn("8 GB", str(commands._gpu_missing()))
+
+    def test_an_amd_card_this_user_cannot_open_is_missing(self) -> None:
+        # The card is listed to everyone. Without /dev/kfd PyTorch sees nothing, and that would
+        # only show after 15 GB had been fetched.
+        with (
+            patch("sys.platform", "linux"),
+            patch.object(commands, "_nvidia_cards", return_value=[]),
+            patch.object(commands, "_amd_cards", return_value=[("AMD gfx1151", 29437)]),
+            patch.object(commands, "kfd_usable", return_value=False),
+        ):
+            problem = str(commands._gpu_missing())
+        self.assertIn("/dev/kfd", problem)
+        self.assertIn("render", problem)
+        self.assertIn("Do not claim", problem)
+
+    def test_an_nvidia_card_comes_before_an_amd_one(self) -> None:
+        # Every cell so far was drawn on CUDA. A machine with both keeps that path.
+        with (
+            patch.object(commands, "_nvidia_cards", return_value=[("GeForce RTX 5070", 12227)]),
+            patch.object(commands, "_amd_cards", side_effect=AssertionError("AMD was asked")),
+        ):
+            self.assertEqual(commands.gpu_card(), ("nvidia", "GeForce RTX 5070", 12227))
+
+    def _kfd(self, nodes: dict[str, tuple[str, list[str]]]) -> Path:
+        root = Path(self.tmp.name) / "kfd" / "nodes"
+        for name, (properties, banks) in nodes.items():
+            node = root / name
+            (node / "mem_banks").mkdir(parents=True)
+            (node / "properties").write_text(properties, encoding="ascii")
+            for index, bank in enumerate(banks):
+                (node / "mem_banks" / str(index)).mkdir()
+                (node / "mem_banks" / str(index) / "properties").write_text(bank, encoding="ascii")
+        return root
+
+    def test_amd_cards_are_read_from_the_driver_table_rocm_reads(self) -> None:
+        # As Strix Halo reports itself: the CPU is node 0 with no SIMDs, the GPU node 1, and the
+        # GPU's memory is the share of system memory the driver gives it.
+        root = self._kfd(
+            {
+                "0": ("cpu_cores_count 32\nsimd_count 0\nvendor_id 0\n", ["heap_type 0\nsize_in_bytes 61735866368\n"]),
+                "1": (
+                    "cpu_cores_count 0\nsimd_count 80\ngfx_target_version 110501\nvendor_id 4098\n",
+                    ["heap_type 1\nsize_in_bytes 30867931136\nflags 0\n"],
+                ),
+                # A discrete card whose memory is split into the part the CPU sees and the rest.
+                "2": (
+                    "simd_count 192\ngfx_target_version 110000\nvendor_id 4098\n",
+                    ["heap_type 1\nsize_in_bytes 268435456\n", "heap_type 2\nsize_in_bytes 25501368320\n", "heap_type 0\nsize_in_bytes 1\n"],
+                ),
+                "3": ("simd_count 80\ngfx_target_version 110501\nvendor_id 4318\n", ["heap_type 1\nsize_in_bytes 1\n"]),
+            }
+        )
+        with patch("sys.platform", "linux"), patch.object(commands, "KFD_NODES", root):
+            self.assertEqual(commands._amd_cards(), [("AMD gfx1151", 29437), ("AMD gfx1100", 24576)])
+        # The table is Linux's. Elsewhere it is not asked, and a missing one is no card.
+        with patch("sys.platform", "win32"), patch.object(commands, "KFD_NODES", root):
+            self.assertEqual(commands._amd_cards(), [])
+        with patch("sys.platform", "linux"), patch.object(commands, "KFD_NODES", root / "gone"):
+            self.assertEqual(commands._amd_cards(), [])
+
+    def test_a_gfx_target_version_is_named_as_llvm_names_it(self) -> None:
+        for version, name in ((110501, "gfx1151"), (110000, "gfx1100"), (120001, "gfx1201"), (100300, "gfx1030"), (90402, "gfx942"), (90010, "gfx90a")):
+            with self.subTest(version=version):
+                self.assertEqual(commands.gfx_name(version), name)
+
+    def test_an_amd_card_the_rocm_build_has_no_kernels_for_is_missing(self) -> None:
+        # The RX 6700 XT has 12 GB and is gfx1031, which the rocm7.2 wheel was not built for.
+        built = ["gfx1030", "gfx1100", "gfx1151"]
+
+        def rocm_build(arch: str, arch_list: object = None) -> SimpleNamespace:
+            def get_arch_list() -> list[str]:
+                if isinstance(arch_list, Exception):
+                    raise arch_list
+                return built if arch_list is None else arch_list  # type: ignore[return-value]
+
+            return SimpleNamespace(
+                version=SimpleNamespace(hip="7.2.53211", cuda=None),
+                cuda=SimpleNamespace(
+                    is_available=lambda: True,
+                    get_device_properties=lambda index: SimpleNamespace(gcnArchName=arch),
+                    get_arch_list=get_arch_list,
+                ),
+            )
+
+        problem = commands._no_kernels_for_card(rocm_build("gfx1031"))
+        self.assertIn("no kernels for gfx1031", str(problem))
+        self.assertIn("gfx1151", str(problem))
+        self.assertIsNone(commands._no_kernels_for_card(rocm_build("gfx1151")))
+        # The feature flags after the colon are not part of the target.
+        self.assertIsNone(commands._no_kernels_for_card(rocm_build("gfx1100:sramecc-:xnack-")))
+        self.assertIsNone(commands._no_kernels_for_card(rocm_build("gfx90a:sramecc+:xnack-", ["gfx90a:xnack-"])))
+        # A build that cannot say is let be, and a CUDA build is not asked.
+        self.assertIsNone(commands._no_kernels_for_card(rocm_build("gfx1031", RuntimeError("no list"))))
+        self.assertIsNone(commands._no_kernels_for_card(rocm_build("gfx1031", [])))
+        cuda_build = SimpleNamespace(version=SimpleNamespace(hip=None, cuda="12.8"), cuda=None)
+        self.assertIsNone(commands._no_kernels_for_card(cuda_build))
+        # It is what check: torch says.
+        with patch.dict("sys.modules", {"torch": rocm_build("gfx1031")}):
+            self.assertIn("no kernels for gfx1031", str(commands._torch_missing()))
+
+    def test_a_pytorch_for_the_other_vendor_is_named(self) -> None:
+        cuda_build = SimpleNamespace(version=SimpleNamespace(hip=None, cuda="12.8"))
+        rocm_build = SimpleNamespace(version=SimpleNamespace(hip="7.2.53211", cuda=None))
+        with patch.object(commands, "gpu_card", return_value=("amd", "AMD gfx1151", 29437)):
+            self.assertIn(commands.ROCM_TORCH_INDEX, str(commands._torch_build_wrong(cuda_build)))
+            self.assertIsNone(commands._torch_build_wrong(rocm_build))
+        with patch.object(commands, "gpu_card", return_value=("nvidia", "GeForce RTX 5070", 12227)):
+            self.assertIn("cu128", str(commands._torch_build_wrong(rocm_build)))
+            self.assertIsNone(commands._torch_build_wrong(cuda_build))
+        with patch.object(commands, "gpu_card", return_value=None):
+            self.assertIsNone(commands._torch_build_wrong(cuda_build))
 
     def test_a_small_card_is_missing_and_a_12_gb_card_is_ok(self) -> None:
         with patch("sys.platform", "linux"), patch.object(commands, "_nvidia_cards", return_value=[("GeForce GTX 1060", 6144)]):

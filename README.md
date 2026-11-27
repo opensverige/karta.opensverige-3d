@@ -22,8 +22,9 @@ Read this before you start. It is what building a cell asks of you and your mach
 
 **The machine**
 
-- An NVIDIA card with 12 GB of memory. AMD and Intel cards do not work, and neither does a Mac.
-- Windows or Linux.
+- An NVIDIA card with 12 GB of memory, on Windows or Linux.
+- Or, on Linux only, an AMD card that ROCm supports, with 12 GB the GPU can use. See [AMD on Linux](#amd-on-linux).
+- Intel cards do not work, and neither does a Mac.
 - 25 GB of free disk, and about 1 GB more for `stockholm-norr`.
 - A connection that can download about 16 GB once: 12 for the model, 3 for PyTorch and its libraries, 1 for the `stockholm-norr` renderer.
 
@@ -72,7 +73,7 @@ Run the tool from `cli/` with `python -m rutor`, or install it into the virtuale
 ## The steps
 
 ```bash
-rutor preflight --machine     # python, the NVIDIA card and the disk: before anything else
+rutor preflight --machine     # python, the graphics card and the disk: before anything else
 rutor login                   # prints the terms and asks you to accept them
 rutor preflight --sheet stockholm-norr   # everything, once the install and the login are done
 rutor claim --plats Eslöv           # or: rutor claim stockholm-norr --next
@@ -99,7 +100,7 @@ rutor claim --at 56.0465,12.6945
 
 `rutor redraw --wait-for-cheap` runs the SE3 price check first. While the price is high it exits 6 and you keep your lock; run it again after the time it prints. Without the flag the price check is advice only: `python -m rutor.se3_price`.
 
-`rutor preflight` checks Python, the NVIDIA card, the disk, PyTorch with CUDA, bitsandbytes, Pillow and numpy, the service and the login. With `--sheet stockholm-norr` it also checks what that sheet's source needs: Node, the Google renderer and the Cesium ion token. Do not claim, render or redraw when any line says `missing`. `rutor claim` refuses on a Google sheet until those three are in place, so no cell is locked that the machine cannot render.
+`rutor preflight` checks Python, the graphics card, the disk, PyTorch with CUDA or ROCm, bitsandbytes, Pillow and numpy, the service and the login. With `--sheet stockholm-norr` it also checks what that sheet's source needs: Node, the Google renderer and the Cesium ion token. Do not claim, render or redraw when any line says `missing`. `rutor claim` refuses on a Google sheet until those three are in place, so no cell is locked that the machine cannot render.
 
 `rutor render` refuses a sheet nobody has claimed on (`refused: not_claimed`): claim the cell first. A claim answered `refused: update_needed` means this clone is older than the sheet needs: update it and install again.
 
@@ -115,7 +116,7 @@ rutor app        # or: rutor bygg
 
 It prints `url:` with the page's address, opens it in your browser, and runs until you press Ctrl-C. The page is in Swedish and takes you through eight steps, one question at a time:
 
-1. It looks at the machine itself: the NVIDIA card, the free disk and the memory. A machine that cannot draw gets a plain no here, and one with less than 17 GB of memory a warning.
+1. It looks at the machine itself: the graphics card, the free disk and the memory. A machine that cannot draw gets a plain no here, and one with less than 17 GB of memory a warning.
 2. The ten terms ([TERMS.md](TERMS.md)), word for word, and a box to tick.
 3. The GitHub login: the page shows the device code and you approve it at GitHub.
 4. Your Cesium ion token, for a sheet that needs one. You paste it once. Cesium ion is asked whether it works before it is kept.
@@ -135,7 +136,7 @@ What is worth knowing:
 - **The browser page never sees your login or your Cesium token.** Neither is in anything the page is sent. The login goes to the project's service with each command, as from the terminal, and the Cesium token to Cesium ion. A token pasted into the page is kept beside the login (`cesium-token`, readable by you only) and is the one the page uses, also when `CESIUM_ION_TOKEN` is set.
 - **When a cell fails,** "Kopiera felrapport" copies a report with your user name and home folder taken out. You paste it into an issue yourself. The page sends nothing on its own.
 
-The page says no on a Mac and on a machine without a 12 GB NVIDIA card, as `rutor claim` does. From a clone the install is still done by hand, as under [Setup](#setup).
+The page says no on a Mac and on a machine without a 12 GB NVIDIA card, or on Linux a 12 GB AMD card, as `rutor claim` does. From a clone the install is still done by hand, as under [Setup](#setup).
 
 If the app was ended in the middle of a cell, that cell is still locked when you come back. The page finds it the next time you press Rita, says so, and gives it back when you press again.
 
@@ -143,7 +144,7 @@ The first cell built this way was `stockholm-norr` 82_24, on an RTX 5070 on Wind
 
 ## Setup
 
-Use Python 3.11 or newer. NVIDIA CUDA is required for the redraw. The 4-bit checkpoint is a bitsandbytes quant. A 12 GB card is enough: the redraw peaks at about 11 GB. One cell takes about two minutes on an RTX 5070 or an L4.
+Use Python 3.11 or newer. The redraw needs NVIDIA CUDA, or on Linux AMD ROCm: see [AMD on Linux](#amd-on-linux). The 4-bit checkpoint is a bitsandbytes quant. A 12 GB card is enough: the redraw peaks at about 11 GB. One cell takes about two minutes on an RTX 5070 or an L4.
 
 Check the machine before anything large is fetched. Then install a CUDA build of PyTorch and torchvision before `requirements.txt`, so a later install does not replace them with CPU wheels. The redraw does not load without torchvision. If the CUDA 12.8 index does not match your driver, use the current index from <https://pytorch.org>.
 
@@ -198,6 +199,26 @@ python -m pip install torch torchvision --index-url https://download.pytorch.org
 python -m pip install -r requirements.txt
 ```
 
+### AMD on Linux
+
+An AMD card draws through ROCm, PyTorch's build for AMD. The redraw itself is the same code: on ROCm, PyTorch answers to `cuda` too.
+
+One machine has drawn a cell this way so far: an AMD Ryzen AI Max+ 395 (Strix Halo, Radeon 8060S, `gfx1151`) with 64 GB, on Ubuntu with Linux 7.0. Other cards in `torch.cuda.get_arch_list()` of the ROCm build may work, and have not been tried.
+
+- **Nothing from AMD is installed on the system.** The ROCm build of PyTorch carries its own libraries, and the bitsandbytes wheel in `requirements.txt` has a ROCm 7.2 build in it. The kernel's own `amdgpu` driver is enough.
+- **Your account must be able to open `/dev/kfd`.** A desktop login usually can. Otherwise it needs the `render` and `video` groups, given by whoever administers the machine, and a new login after. `rutor preflight --machine` says so before anything large is fetched.
+- **The card is found without PyTorch,** in the table the kernel keeps for ROCm (`/sys/class/kfd`). On an APU such as Strix Halo, the GPU's memory is the share of system memory the kernel gives it, about half by default. That is the number `check: gpu` holds against 12 GB.
+- **It is slower.** One cell took six and a half minutes on Strix Halo with the model cached, against two on an RTX 5070.
+
+Install as for Linux above, with the ROCm index in place of `cu128`:
+
+```bash
+python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2
+python -m pip install -r requirements.txt
+```
+
+bitsandbytes prints `Could not detect ROCm GPU architecture` when `rocminfo` is not installed. It does not use the answer, and the redraw goes on.
+
 ### macOS
 
 A Mac cannot build a cell: the redraw needs an NVIDIA card. It can change the code and run the tests, and that needs neither the model stack nor a login:
@@ -232,6 +253,23 @@ A Google sheet needs three things on your machine:
   - `rutor app` asks for the token on its page instead, and keeps it beside the login.
 - Node 22 or newer.
 - `npm ci` once in `cli/google-render`. It downloads Cesium and a Chrome for headless rendering, about 1 GB.
+
+**On Ubuntu 23.10 or newer,** the Chrome that `npm ci` fetches cannot build its sandbox when it is started from a terminal. Ubuntu lets a program make user namespaces only when an AppArmor profile allows it (`kernel.apparmor_restrict_unprivileged_userns = 1`), and that Chrome has none. It stops with `No usable sandbox!`, and `rutor render` says so. The fix [Chromium describes](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md) is a profile that names that one binary and allows it user namespaces, the same shape as Ubuntu's own `/etc/apparmor.d/chrome`. Chrome keeps its sandbox. A person with sudo installs it once; it covers the Chrome versions Puppeteer fetches later too. Know what it opens: the path is in your home folder, so any program that runs as you can put a file there and get the same exception. Chromium's page says so, and calls its setuid sandbox the safest way:
+
+```bash
+sudo tee /etc/apparmor.d/chrome-puppeteer > /dev/null <<EOF
+abi <abi/5.0>,
+include <tunables/global>
+
+profile chrome-puppeteer $HOME/.cache/puppeteer/{chrome,chrome-headless-shell}/linux-*/*/{chrome,chrome-headless-shell} flags=(unconfined) {
+  userns,
+  @{exec_path} mr,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/chrome-puppeteer
+```
+
+Do not use `--no-sandbox` instead, and do not lift the restriction for the whole machine: both take away more than the profile does.
 
 Google's terms bind your token, not this project's MIT license. Google's Map Tiles policy does not allow deriving new content from its tiles, so read it and decide for yourself. Google can ask for cells drawn from its tiles to be taken down. `rutor render` prints a notice on every Google cell, and the manifest names the source.
 

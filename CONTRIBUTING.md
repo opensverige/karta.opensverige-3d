@@ -8,8 +8,8 @@ This page holds the rules. The commands and the install are in [README.md](READM
 
 A code change needs none of the list below: any machine with Python 3.11 will do, and Node 22 for the service's tests. A GPU run needs all of it. The full list is under "What you need" in [README.md](README.md).
 
-- An NVIDIA GPU with CUDA and 12 GB of memory or more.
-- Time. One cell takes about two minutes on an RTX 5070 or an L4.
+- An NVIDIA GPU with CUDA and 12 GB of memory or more, or on Linux an AMD GPU that ROCm supports, with 12 GB the GPU can use.
+- Time. One cell takes about two minutes on an RTX 5070 or an L4, and six and a half on an AMD Strix Halo.
 - 25 GB of free disk, and about 1 GB more for `stockholm-norr`. The downloads are about 16 GB in all, 12 of them the model.
 - Windows or Linux for the redraw. A Mac can change the code and run the tests. It cannot redraw, so do not claim a cell on a Mac.
 - Python 3.11 or newer, and a GitHub account.
@@ -44,7 +44,7 @@ Each step is explained in [README.md](README.md).
 
 ## Code contributions
 
-Code contributions and GPU runs are both open. GPU runs need an NVIDIA card.
+Code contributions and GPU runs are both open. GPU runs need an NVIDIA card, or an AMD card on Linux.
 
 - Pick an issue, or open one before a large change.
 - Branch from `main` and open a pull request against `main`.

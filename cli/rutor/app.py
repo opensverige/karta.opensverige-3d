@@ -132,18 +132,23 @@ def machine() -> dict[str, object]:
     if _platform() == "darwin":
         problem = "mac"
     else:
-        cards = commands._nvidia_cards()
-        if not cards:
+        found = commands.gpu_card()
+        if found is None:
             problem = "no_card"
         else:
-            name, mib = max(cards, key=lambda item: item[1])
+            vendor, name, mib = found
             # The name comes from the driver. It is shown, so it is one short line.
             card = api.one_line(name, 60)
             card_gb = round(mib / 1024)
-            driver = api.one_line(commands._nvidia_driver(), 20)
+            # The driver version is NVIDIA's. An AMD card is asked only on Linux, where no
+            # driver number is held against it.
+            driver = api.one_line(commands._nvidia_driver(), 20) if vendor == "nvidia" else ""
             if mib < commands.GPU_MIN_MIB:
                 problem = "small_card"
-            elif _platform() == "win32" and commands.driver_too_old(driver):
+            elif vendor == "amd" and not commands.kfd_usable():
+                # The card is listed to everyone, but ROCm opens /dev/kfd, and this user may not.
+                problem = "no_rocm"
+            elif _platform() == "win32" and vendor == "nvidia" and commands.driver_too_old(driver):
                 # Said here, before anything is fetched: PyTorch would fail on it much later.
                 problem = "old_driver"
             elif free < needed:

@@ -116,10 +116,14 @@ class ChecksTests(_OwnHome):
         cached: bool = False,
         platform: str = "linux",
         driver: str = "616.56",
+        amd: list[tuple[str, int]] | None = None,
+        kfd: bool = True,
     ) -> dict[str, object]:
         with (
             patch("rutor.app._platform", return_value=platform),
             patch("rutor.commands._nvidia_cards", return_value=cards),
+            patch("rutor.commands._amd_cards", return_value=amd or []),
+            patch("rutor.commands.kfd_usable", return_value=kfd),
             patch("rutor.commands._nvidia_driver", return_value=driver),
             patch("rutor.commands._free_gb", return_value=free),
             patch("rutor.commands._model_is_cached", return_value=cached),
@@ -162,6 +166,19 @@ class ChecksTests(_OwnHome):
         self.assertEqual(found["card_gb"], 12)
         self.assertEqual(found["free_gb"], 257)
         self.assertEqual(found["needed_gb"], 25)
+
+    def test_an_amd_card_on_linux_is_a_yes_with_no_driver_number(self) -> None:
+        # nvidia-smi would answer 616.56 here. An AMD card is not judged by NVIDIA's number.
+        found = self._machine([], amd=[("AMD gfx1151", 29437)], driver="616.56")
+        self.assertTrue(found["ok"])
+        self.assertEqual((found["problem"], found["card"], found["card_gb"], found["driver"]), ("", "AMD gfx1151", 29, ""))
+        small = self._machine([], amd=[("AMD gfx1030", 8176)])
+        self.assertEqual((small["ok"], small["problem"], small["card_gb"]), (False, "small_card", 8))
+        shut = self._machine([], amd=[("AMD gfx1151", 29437)], kfd=False)
+        self.assertEqual((shut["ok"], shut["problem"], shut["card"]), (False, "no_rocm", "AMD gfx1151"))
+        # An NVIDIA card is not asked about /dev/kfd.
+        nvidia = self._machine([("GeForce RTX 5070", 12227)], kfd=False)
+        self.assertEqual((nvidia["ok"], nvidia["problem"]), (True, ""))
 
     def test_the_largest_card_is_the_one_that_counts(self) -> None:
         found = self._machine([("GeForce GT 710", 2048), ("GeForce RTX 5070", 12227)])
@@ -2956,7 +2973,7 @@ class PageFilesTests(unittest.TestCase):
     def test_every_problem_word_has_a_swedish_sentence(self) -> None:
         script = self.read("app.js")
         words = (
-            "mac", "no_card", "small_card", "disk", "old_driver",
+            "mac", "no_card", "small_card", "disk", "old_driver", "no_rocm",
             "missing", "refused", "twice", "no_access", "unreachable", "broken",
             "expired", "network",
             "taken", "machine", "check", "failed", "locks", "waiting", "lock_left",

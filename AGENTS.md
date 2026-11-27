@@ -8,12 +8,12 @@ The commands are explained in [README.md](README.md), the rules in [CONTRIBUTING
 
 There are two kinds of work here.
 
-- **Build a map cell.** Your human's own NVIDIA card draws one cell the map does not have yet, as pixel art. What it asks of them is listed under "What you need" in README.md.
+- **Build a map cell.** Your human's own graphics card, NVIDIA or on Linux AMD, draws one cell the map does not have yet, as pixel art. What it asks of them is listed under "What you need" in README.md.
 - **Change the code.** The CLI, the renderer, the check, the service or the docs. It needs no GPU.
 
 If your human did not say which, check the machine (step 2) and then ask. Do not log in, accept terms or claim a cell before they answer.
 
-- No NVIDIA card: say so, and offer a code change. Issues labelled `good first issue` are a place to start.
+- No NVIDIA card, and no AMD card on Linux: say so, and offer a code change. Issues labelled `good first issue` are a place to start.
 - The machine passes: say so, and ask whether they want to build a cell.
 
 Safe to run while you wait: cloning, the light install, `rutor preflight --machine`, `rutor cities`, `rutor grid <sheet>` and the tests. None of them logs in, claims or uploads.
@@ -64,7 +64,7 @@ No yes, no login.
 ## 5. Install and log in
 
 1. Install the model stack. You have the clone and the virtualenv already, so of the README's setup block these two lines are left:
-   - `python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128`
+   - `python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128`. On an AMD card the index is `https://download.pytorch.org/whl/rocm7.2` instead; with the wrong build in, `check: torch` in step 5.5 says which one the card needs
    - `python -m pip install -r requirements.txt`
 
    These two lines download about 3 GB. The first redraw downloads about 12 GB of model weights.
@@ -126,6 +126,7 @@ Build another cell only if your human asked for more. One at a time. At most fiv
 - A command says `CESIUM_ION_TOKEN is not set`, `Cesium ion refused the token` or `Cesium ion did not let this token read asset`. Ask your human to set the token themselves, as in step 5. Do not look for one, and do not ask them to paste it to you. If they cannot fix it now and you hold a cell, release it.
 - A command says `the Google source needs Node 22 or newer`. Ask your human to install Node.
 - A command says `the Google renderer is not installed`. Run `npm ci` in the folder it names.
+- `rutor render` says `No usable sandbox!`. On Ubuntu 23.10 or newer, Chrome needs an AppArmor profile first. Show your human the commands under "Source render" in README.md: they need sudo, so your human runs them. Do not add `--no-sandbox` and do not change the sysctl. If they cannot do it now, release the cell.
 - `rutor render` says the Cesium ion quota is used up. Release the cell, or try again tomorrow.
 - `rutor render` says `flat:` and exits 5. Nothing in the cell stands up from the ground: it is open water or fields, or Google has no 3D buildings there, and the houses are a photo on flat ground that does not redraw into a drawn town. Do not redraw it. Release the cell and tell your human, with the picture the line names. `--flat-ok` is for them to ask for after they have looked, not for you to add.
 - The service refuses the same step twice. Report the `error:` line. Do not loop.

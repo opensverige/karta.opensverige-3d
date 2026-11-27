@@ -4,7 +4,7 @@ How the parts fit together. The commands are in [README.md](../../README.md), th
 
 ## The idea
 
-The pixel cities on karta.opensverige.se are drawn cell by cell. Anyone with an NVIDIA card claims a cell, renders it from the sheet's source, redraws it as pixel art on their own machine and uploads the result. An admin reviews it, and the cell lights up on the map with the builder's GitHub login.
+The pixel cities on karta.opensverige.se are drawn cell by cell. Anyone with an NVIDIA card, or an AMD card on Linux, claims a cell, renders it from the sheet's source, redraws it as pixel art on their own machine and uploads the result. An admin reviews it, and the cell lights up on the map with the builder's GitHub login.
 
 ## Sheets and cells
 

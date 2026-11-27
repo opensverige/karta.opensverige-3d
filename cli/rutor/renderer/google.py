@@ -110,6 +110,16 @@ def google_camera(sheet: dict[str, object], col: int, row: int) -> dict[str, obj
     }
 
 
+# What Chrome says when it may not build its sandbox. On Ubuntu 23.10 and later a program needs an
+# AppArmor profile to make user namespaces, and the Chrome that npm ci fetches has none.
+NO_SANDBOX = "No usable sandbox!"
+SANDBOX_HELP = (
+    "Chrome could not build its sandbox (No usable sandbox!). On Ubuntu 23.10 or newer the Chrome that "
+    "npm ci fetched needs an AppArmor profile first: see Source render in README.md. A person with sudo "
+    "installs it once"
+)
+
+
 def _run(argv: list[str], env: dict[str, str]) -> tuple[int, str, str]:
     try:
         # Node writes UTF-8 whatever the console's code page is. Read with that code page, a
@@ -365,6 +375,9 @@ def render_google(
             [node, str(root / "render.mjs"), "--camera", str(camera_path), "--out", str(raw_path)], environ
         )
         if code != 0:
+            if NO_SANDBOX in stderr:
+                # Puppeteer's error has many lines, and its last is only a link: say what it means.
+                raise environment(f"the Google render failed: {SANDBOX_HELP}")
             message = f"the Google render failed: {_last_line(stderr)}"
             raise network(message) if code == 4 else environment(message)
         try:

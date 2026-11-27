@@ -96,13 +96,13 @@ def preflight_message() -> str | None:
                 "Do not claim a cell on this Mac."
             )
         return (
-            "No NVIDIA CUDA GPU is visible. Install a CUDA build of PyTorch and check the driver. "
-            "Do not claim a cell until preflight passes."
+            "No GPU is visible to PyTorch. On an NVIDIA card install the CUDA build of PyTorch, on an AMD card "
+            "under Linux the ROCm build, and check the driver. Do not claim a cell until preflight passes."
         )
     try:
         import bitsandbytes
     except ImportError:
-        return "bitsandbytes is not installed. Run pip install -r requirements.txt on this CUDA machine."
+        return "bitsandbytes is not installed. Run pip install -r requirements.txt on this machine."
     del bitsandbytes
     return None
 

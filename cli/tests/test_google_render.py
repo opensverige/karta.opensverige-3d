@@ -250,6 +250,25 @@ class GoogleRenderTests(unittest.TestCase):
                 self.assertIn("ion answered 401", caught.exception.message)
 
 
+    def test_chrome_without_its_sandbox_is_named_not_left_as_a_link(self) -> None:
+        # Puppeteer's launch error as render.mjs prints it, on Ubuntu 24.04 from a terminal. Its
+        # last line is only a link, and that was all rutor said.
+        stderr = (
+            "gpu render failed (Failed to launch the browser process!), trying the software renderer\n"
+            "error: Failed to launch the browser process:  Code: null\n\nstderr:\n"
+            "[1:1:1127/183701.722417:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] "
+            "No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled "
+            "unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/x\n"
+            "Received signal 6\n\nTROUBLESHOOTING: https://pptr.dev/troubleshooting\n"
+        )
+        with self.assertRaises(RutorError) as caught:
+            self.render(_Node(code=3, stderr=stderr))
+        self.assertEqual(caught.exception.code, 3)
+        self.assertIn("No usable sandbox!", caught.exception.message)
+        self.assertIn("AppArmor", caught.exception.message)
+        self.assertIn("README.md", caught.exception.message)
+
+
 class DispatchTests(unittest.TestCase):
     def test_a_google_sheet_renders_through_cesium(self) -> None:
         with patch.object(google, "render_google") as called, patch("rutor.renderer.render") as open_render:

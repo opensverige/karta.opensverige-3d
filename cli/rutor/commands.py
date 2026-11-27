@@ -470,15 +470,102 @@ def driver_too_old(version: str) -> bool:
     return (int(parts[0]), int(parts[1])) < DRIVER_MIN
 
 
+# The table the AMD kernel driver keeps for ROCm, the same one the ROCm runtime reads to find
+# its GPUs. Reading it needs no PyTorch and no ROCm tools, so the machine check stays light.
+KFD_NODES = Path("/sys/class/kfd/kfd/topology/nodes")
+AMD_VENDOR_ID = 0x1002
+# HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC and _PRIVATE: the memory the GPU allocates from. On a
+# discrete card that is its own memory. On an APU such as Strix Halo it is the share of system
+# memory the driver gives the GPU (GTT), which is also what PyTorch sees as the card's memory.
+_KFD_GPU_HEAPS = (1, 2)
+# The device the ROCm runtime opens. The table above is readable by every user; this is not.
+# A desktop login is usually given it by the seat, an SSH login only through the render group.
+KFD_DEVICE = "/dev/kfd"
+
+
+def kfd_usable() -> bool:
+    """Whether this user may open the device ROCm needs."""
+    return os.access(KFD_DEVICE, os.R_OK | os.W_OK)
+
+
+def _kfd_properties(path: Path) -> dict[str, int]:
+    """One KFD properties file, as name and number. Unreadable is empty."""
+    try:
+        text = path.read_text(encoding="ascii")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    found: dict[str, int] = {}
+    for line in text.splitlines():
+        name, _, value = line.strip().partition(" ")
+        if name and value.strip().isdigit():
+            found[name] = int(value.strip())
+    return found
+
+
+def gfx_name(version: int) -> str:
+    """The LLVM target of a KFD gfx_target_version: 110501 is gfx1151, 90402 is gfx942."""
+    major, minor, stepping = version // 10000, (version // 100) % 100, version % 100
+    return f"gfx{major}{minor:x}{stepping:x}"
+
+
+def _amd_cards() -> list[tuple[str, int]]:
+    """Name and memory in MiB of each AMD GPU the ROCm driver offers. Linux only; needs no PyTorch."""
+    if not sys.platform.startswith("linux"):
+        return []
+    try:
+        nodes = sorted(KFD_NODES.iterdir())
+    except OSError:
+        return []
+    cards: list[tuple[str, int]] = []
+    for node in nodes:
+        properties = _kfd_properties(node / "properties")
+        # A CPU is a node too, with no SIMDs.
+        if properties.get("simd_count", 0) <= 0 or properties.get("vendor_id") != AMD_VENDOR_ID:
+            continue
+        memory = 0
+        try:
+            banks = sorted((node / "mem_banks").iterdir())
+        except OSError:
+            banks = []
+        for bank in banks:
+            bank_properties = _kfd_properties(bank / "properties")
+            if bank_properties.get("heap_type") in _KFD_GPU_HEAPS:
+                memory += bank_properties.get("size_in_bytes", 0)
+        cards.append((f"AMD {gfx_name(properties.get('gfx_target_version', 0))}", memory // 2**20))
+    return cards
+
+
+def gpu_card() -> tuple[str, str, int] | None:
+    """Vendor, name and memory in MiB of the card the redraw runs on, or None.
+
+    An NVIDIA card first: that is the path every cell so far was drawn on. AMD is asked only on a
+    machine without one, and then only on Linux, where PyTorch has ROCm builds.
+    """
+    for vendor, ask in (("nvidia", _nvidia_cards), ("amd", _amd_cards)):
+        cards = ask()
+        if cards:
+            name, memory = max(cards, key=lambda card: card[1])
+            return vendor, name, memory
+    return None
+
+
 def _gpu_missing() -> str | None:
     if sys.platform == "darwin":
         return "this is a Mac, and the redraw needs an NVIDIA card. Do not claim a cell here."
-    cards = _nvidia_cards()
-    if not cards:
-        return "no NVIDIA card found (nvidia-smi did not answer). Do not claim a cell here."
-    name, memory = max(cards, key=lambda card: card[1])
+    card = gpu_card()
+    if card is None:
+        return (
+            "no NVIDIA card found (nvidia-smi did not answer), and no AMD card the ROCm driver offers. "
+            "Do not claim a cell here."
+        )
+    vendor, name, memory = card
     if memory < GPU_MIN_MIB:
         return f"{name} has {round(memory / 1024)} GB, and the redraw needs 12 GB. Do not claim a cell here."
+    if vendor == "amd" and not kfd_usable():
+        return (
+            f"{name} is here, but this user cannot open {KFD_DEVICE}, so PyTorch would see no GPU. "
+            "The account needs the render and video groups: sign out and in again after. Do not claim a cell here."
+        )
     return None
 
 
@@ -519,7 +606,46 @@ def _torch_missing() -> str | None:
     cuda = getattr(torch, "cuda", None)
     available = getattr(cuda, "is_available", None)
     if not callable(available) or not available():
-        return "no CUDA device"
+        return _torch_build_wrong(torch) or "no CUDA device"
+    return _no_kernels_for_card(torch)
+
+
+def _no_kernels_for_card(torch: object) -> str | None:
+    """A ROCm build of PyTorch that has no kernels for the AMD card it sees.
+
+    It still answers yes to is_available, and the first sign is "invalid device function" in the
+    middle of a redraw, after the lock and the downloads. The build's own list of targets says it
+    before: nothing here is guessed. A CUDA build is not asked, and one that cannot say is let be.
+    """
+    if not getattr(getattr(torch, "version", None), "hip", None):
+        return None
+    cuda = getattr(torch, "cuda", None)
+    try:
+        # gcnArchName carries feature flags after a colon, like gfx90a:sramecc+:xnack-.
+        arch = str(cuda.get_device_properties(0).gcnArchName).split(":")[0]
+        # A build's list can carry feature flags too, like gfx90a:xnack-. The target is what counts.
+        built = [str(name).split(":")[0] for name in cuda.get_arch_list()]
+    except Exception:
+        return None
+    if not arch or not built or arch in built:
+        return None
+    return f"this ROCm build of PyTorch has no kernels for {arch}, the card here; it was built for {', '.join(built)}"
+
+
+# The PyTorch index for an AMD card: the build the redraw was tried with on Strix Halo.
+ROCM_TORCH_INDEX = "https://download.pytorch.org/whl/rocm7.2"
+
+
+def _torch_build_wrong(torch: object) -> str | None:
+    """A PyTorch built for the other vendor's cards sees no GPU. Say which build is needed."""
+    card = gpu_card()
+    if card is None:
+        return None
+    hip = getattr(getattr(torch, "version", None), "hip", None)
+    if card[0] == "amd" and not hip:
+        return f"PyTorch is not a ROCm build, and this card is AMD: install torch and torchvision from {ROCM_TORCH_INDEX}"
+    if card[0] == "nvidia" and hip:
+        return "PyTorch is a ROCm build, and this card is NVIDIA: install torch and torchvision from https://download.pytorch.org/whl/cu128"
     return None
 
 
@@ -1051,7 +1177,7 @@ def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     whoami.set_defaults(func=cmd_whoami)
 
     preflight = sub.add_parser("preflight", help="check the machine before a redraw")
-    preflight.add_argument("--machine", action="store_true", help="only python, the NVIDIA card and the disk: needs no install and no login")
+    preflight.add_argument("--machine", action="store_true", help="only python, the graphics card and the disk: needs no install and no login")
     preflight.add_argument("--sheet", help="also check what this sheet's source needs, such as Node and a Cesium ion token")
     preflight.set_defaults(func=cmd_preflight)
 

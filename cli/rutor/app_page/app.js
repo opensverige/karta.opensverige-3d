@@ -11,9 +11,10 @@ const OKANT = "Något gick fel. Försök igen.";
 const ORD = {
   dator: {
     mac: "Det här är en Mac. Ritandet kräver ett NVIDIA-kort.",
-    no_card: "Inget NVIDIA-kort hittades. Det krävs ett med 12 GB.",
+    no_card: "Inget grafikkort som kan rita hittades. Det krävs ett NVIDIA-kort med 12 GB. Ett AMD-kort går också, men bara på Linux.",
     small_card: "Grafikkortet har för lite minne. Det krävs 12 GB.",
     old_driver: "Grafikkortets drivrutin är för gammal. Uppdatera den hos NVIDIA.",
+    no_rocm: "AMD-kortet går inte att nå. Ditt konto behöver grupperna render och video.",
     disk: "Disken är för full. Gör plats och kom tillbaka.",
   },
   varning: {
@@ -325,13 +326,14 @@ function steg1(s) {
   visa("dator-tittar", false);
   visa("dator-rader", true);
   const gammal = m.problem === "old_driver";
-  const kortFel = m.problem === "mac" || m.problem === "no_card" || m.problem === "small_card" || gammal;
+  const kortFel =
+    m.problem === "mac" || m.problem === "no_card" || m.problem === "small_card" || m.problem === "no_rocm" || gammal;
   const kort = el("dator-kort");
   // An old driver is named with its number, so the person can see it change after an update.
   const drivrutin = gammal && m.driver ? " · drivrutin " + m.driver : "";
   text(
     "dator-kort",
-    m.card ? m.card + " · " + m.card_gb + " GB" + drivrutin + (kortFel ? "" : " ✓") : "Inget NVIDIA-kort",
+    m.card ? m.card + " · " + m.card_gb + " GB" + drivrutin + (kortFel ? "" : " ✓") : "Inget grafikkort",
   );
   kort.classList.toggle("nej", kortFel);
   kort.classList.toggle("ok", !kortFel);
