@@ -5,6 +5,7 @@ import { nowIso } from '../src/db.js';
 import { ALLOWED_SIDES, MAX_UPLOAD, inspectPng, notPlain, parseManifest } from '../src/upload.js';
 import { NOW, call, clearDb, getCell, insertCells, insertSheet, insertUser, setCell } from './fixtures.js';
 import { manifestHeader, minimalPng, pngOfKind, sha256Hex } from './png.js';
+import { TERMS_VERSION } from '../src/terms.js';
 
 const user = { github_id: 4242, login: 'klang', first_seen: NOW, approved_count: 0, trusted: 0, blocked: 0 };
 const trusted = { github_id: 7, login: 'ebba', first_seen: NOW, approved_count: 12, trusted: 1, blocked: 0 };
@@ -22,6 +23,7 @@ async function put(u, bytes, manifest = {}, headers = {}) {
       method: 'PUT',
       headers: {
         Authorization: 'Bearer t',
+        'X-Terms-Version': TERMS_VERSION,
         'Content-Type': 'image/png',
         'Content-Length': String(bytes.length),
         'X-Manifest': manifestHeader({ sha256: sha, ...manifest }),
@@ -177,7 +179,7 @@ describe('PUT /v1/upload, lock lost mid-flight', () => {
     const r = await call(
       new Request('https://x/v1/upload/goteborg-norr/1_1', {
         method: 'PUT',
-        headers: { Authorization: 'Bearer t', 'Content-Type': 'image/png', 'Content-Length': String(bytes.length), 'X-Manifest': manifestHeader({ sha256: sha }) },
+        headers: { Authorization: 'Bearer t', 'X-Terms-Version': TERMS_VERSION, 'Content-Type': 'image/png', 'Content-Length': String(bytes.length), 'X-Manifest': manifestHeader({ sha256: sha }) },
         body: bytes,
       }),
       { INKORG: inkorg },

@@ -9,6 +9,7 @@
 import { requireIntake, requireUser } from './auth.js';
 import { logEvent } from './cells.js';
 import { error, json } from './db.js';
+import { acceptedTerms, termsRefusal } from './terms.js';
 
 export const MAX_UPLOAD = 8388608;
 export const ALLOWED_SIDES = [1024, 1536];
@@ -196,6 +197,9 @@ async function uploadsLastDay(db, githubId, now) {
 
 /** PUT /v1/upload/:sheet/:col_:row */
 export const uploadRoute = requireUser(async (request, env, ctx, params, now, user) => {
+  // Before the body is read: a refusal here costs the caller nothing and keeps their lock.
+  const terms = acceptedTerms(request);
+  if (!terms) return termsRefusal();
   const sheet = params.sheet;
   const col = Number(params.col);
   const row = Number(params.row);
@@ -256,7 +260,7 @@ export const uploadRoute = requireUser(async (request, env, ctx, params, now, us
     await env.INKORG.delete([`${key}.png`, `${key}.json`]);
     return error(409, 'lock_lost', 'Your lock on that cell ended before the upload finished. Claim it again, then upload.');
   }
-  await logEvent(env.DB, { at: now, github_id: user.github_id, login: user.login, action: 'upload', sheet, col, row, detail: `${bytes.length} bytes, ${png.width} px, ${state}` });
+  await logEvent(env.DB, { at: now, github_id: user.github_id, login: user.login, action: 'upload', sheet, col, row, detail: `${bytes.length} bytes, ${png.width} px, ${state}, terms ${terms}` });
   return json(201, { state, url: `https://karta.opensverige.se/pixelbygget#${sheet}/${col}_${row}` });
 });
 

@@ -9,6 +9,7 @@ import { claimCell } from '../src/cells.js';
 import { getGrid } from '../src/sheets.js';
 import { NOW, call, clearDb, getCell, insertCells, insertSheet, insertUser, rowCounts, setCell, stubOutside } from './fixtures.js';
 import { manifestHeader, minimalPng } from './png.js';
+import { TERMS_VERSION } from '../src/terms.js';
 
 const LATER = '2026-11-17T13:00:00Z';
 
@@ -169,7 +170,7 @@ describe('an upload that fails after the picture is stored', () => {
     };
     const request = new Request('https://x/v1/upload/goteborg-norr/1_1', {
       method: 'PUT',
-      headers: { Authorization: 'Bearer tok-up', 'Content-Length': String(png.length), 'X-Manifest': manifestHeader({ sha256: await sha256Hex(png) }) },
+      headers: { Authorization: 'Bearer tok-up', 'X-Terms-Version': TERMS_VERSION, 'Content-Length': String(png.length), 'X-Manifest': manifestHeader({ sha256: await sha256Hex(png) }) },
       body: png,
     });
     const response = await call(request, { INKORG: inbox });
@@ -246,7 +247,7 @@ describe('the memory of public reads and a sheet nobody has made yet', () => {
   const HBG = 'se-n5602-e1262';
   const KEEP = { PUBLIC_CACHE_SECONDS: '60' };
   const claim = (body) =>
-    call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), KEEP);
+    call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'X-Terms-Version': TERMS_VERSION, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), KEEP);
 
   beforeEach(() => clearPublicCache());
 
@@ -317,7 +318,7 @@ describe('a client from before the tiling', () => {
 
   it('the route reads the source from the body, and refuses one that is not a source', async () => {
     stubOutside(38);
-    const post = (body) => call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+    const post = (body) => call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'X-Terms-Version': TERMS_VERSION, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
     const old = await post({ sheet: HBG, col: 47, row: 16 });
     expect(old.status).toBe(426);
     expect((await old.json()).error).toBe('update_needed');

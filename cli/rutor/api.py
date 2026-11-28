@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 
 from rutor import __version__
-from rutor.config import service_url
+from rutor.config import read_terms, service_url
 from rutor.errors import network, refused
 
 TIMEOUT_SECONDS = 30
@@ -56,6 +56,11 @@ def _exchange(
         hdrs["Content-Type"] = "application/json"
     if token:
         hdrs["Authorization"] = f"Bearer {token}"
+        # The version of the terms this person said yes to. The service refuses a claim or an
+        # upload without today's, and keeps it with them as the receipt.
+        terms = read_terms()
+        if terms:
+            hdrs["X-Terms-Version"] = terms
     if headers:
         hdrs.update(headers)
     # HTTPError is a URLError. It has to be caught first so a 409 stays a refusal

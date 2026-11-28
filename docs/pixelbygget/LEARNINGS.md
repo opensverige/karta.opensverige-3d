@@ -2,6 +2,17 @@
 
 What we tried, what we measured and what we changed. Newest first. One entry per finding, with the number that decided it. Images, renders and raw logs stay outside the repository; this file keeps the conclusions.
 
+## 2026-11-28
+
+### Nothing showed who had accepted which terms
+A read of the repository for what a builder has agreed to found the ten lines in order, and no record of the yes.
+- **The service kept no terms at all.** `rutor login` refused without a yes, and that was the only proof: code that asks, not a line that says who answered.
+- **A stored login counted as a yes.** The app treated any login as accepted terms, and the CLI never asked again. A change to the ten lines would have reached nobody who was logged in already.
+- **Before 2026-11-23 the terms were four lines,** with nothing about unpaid work or taking a cell down. Every outside builder's cells came after the ten lines, and lines 1, 4 and 6 are the same since.
+- **Now the yes is kept with its version,** in `terms.json` beside the token, and every claim and upload sends it as `X-Terms-Version`. The service refuses one without today's version with 428 `terms_needed`, before anything changes, and writes the version into the claim's and the upload's event: the receipt for each cell. `rutor terms` takes a new yes without a new login, which would spend one of GitHub's ten per person and app.
+- **The cells uploaded before this carry no version,** and no record can be made for them afterwards.
+- **A test holds the date in TERMS.md, the CLI and the service together, and pins a digest of the ten lines to the date.** A new text under the old date fails it.
+
 ## 2026-11-27
 
 ### Ubuntu 24.04 keeps the renderer's Chrome from its sandbox

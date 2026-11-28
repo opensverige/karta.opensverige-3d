@@ -530,7 +530,6 @@ class Builder:
         # The page's own clock: what build() counts as "seen", and when a page has gone.
         self._clock = clock
         self._lock = threading.Lock()
-        self._terms = False
         self._login = ""
         self._code = ""
         self._url = ""
@@ -577,20 +576,19 @@ class Builder:
         self._job_thread: threading.Thread | None = None
 
     def accept_terms(self) -> None:
-        with self._lock:
-            self._terms = True
+        # Kept at once, as `rutor terms` keeps it: a person who is logged in already says yes
+        # to new terms here, and no new login is made for it. The page has shown the lines.
+        login.keep_terms()
 
     def terms_accepted(self) -> bool:
-        self._remember_stored_login()
-        with self._lock:
-            # A stored login exists only because the terms were accepted when it was made.
-            return self._terms or bool(self._login)
+        # The yes kept on this machine, not the login: the terms can change after a login.
+        return login.terms_current()
 
     def start_login(self) -> None:
         self._remember_stored_login()
+        if not login.terms_current():
+            raise Refusal(409, "accept the terms first", "terms")
         with self._lock:
-            if not (self._terms or self._login):
-                raise Refusal(409, "accept the terms first", "terms")
             # A second press while the code is on screen must not start a second child.
             if self._waiting or self._closed:
                 return

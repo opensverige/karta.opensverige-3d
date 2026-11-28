@@ -61,6 +61,8 @@ Show your human the ten lines of [TERMS.md](TERMS.md) and ask them to say yes th
 
 No yes, no login.
 
+A human who logged in before may have said yes to older terms, or before the yes was kept. Then `rutor claim` and `rutor upload` say `refused: terms_needed`, and `rutor whoami` says `terms: not accepted` or names an older version. Show them the ten lines again and ask for a yes. Then run `rutor terms --accept`. Do not run `rutor login` again for it: a new login can end one that works on another machine. Their lock is kept meanwhile.
+
 ## 5. Install and log in
 
 1. Install the model stack. You have the clone and the virtualenv already, so of the README's setup block these two lines are left:
@@ -129,6 +131,7 @@ Build another cell only if your human asked for more. One at a time. At most fiv
 - `rutor render` says `No usable sandbox!`. On Ubuntu 23.10 or newer, Chrome needs an AppArmor profile first. Show your human the commands under "Source render" in README.md: they need sudo, so your human runs them. Do not add `--no-sandbox` and do not change the sysctl. If they cannot do it now, release the cell.
 - `rutor render` says the Cesium ion quota is used up. Release the cell, or try again tomorrow.
 - `rutor render` says `flat:` and exits 5. Nothing in the cell stands up from the ground: it is open water or fields, or Google has no 3D buildings there, and the houses are a photo on flat ground that does not redraw into a drawn town. Do not redraw it. Release the cell and tell your human, with the picture the line names. `--flat-ok` is for them to ask for after they have looked, not for you to add.
+- `refused: terms_needed`. Show your human the ten lines of TERMS.md and ask for a yes, as in step 4. Only after it: `rutor terms --accept`. A rutor from before says to update it first: do so, as in step 2.
 - The service refuses the same step twice. Report the `error:` line. Do not loop.
 - Exit 4: the network failed. Try once more later, then report it.
 - The redraw fails. Report the last lines. Do not change the redraw to get past it.

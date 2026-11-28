@@ -19,7 +19,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from rutor import api, config, pipeline, redraw_core
+from rutor import api, config, login, pipeline, redraw_core
 from rutor.errors import RutorError, bad_input, check_failed, environment, network, refused, wait
 from rutor.manifest import build_manifest, encode_manifest, png_size, sha256_file, write_manifest
 from rutor.check import problems as check_problems
@@ -34,6 +34,17 @@ def require_token() -> str:
     if not token:
         raise environment("not logged in: run rutor login")
     return token
+
+
+def require_terms() -> None:
+    """A claim and an upload need a yes to today's terms. The service asks again, but a rutor
+    that knows says so before it spends a request, in the same words."""
+    if login.terms_current():
+        return
+    raise refused(
+        f"refused: terms_needed: say yes to the terms of {login.TERMS_VERSION} first: run rutor terms. "
+        "Any lock you hold is kept."
+    )
 
 
 def parse_cell(text: str) -> tuple[int, int]:
@@ -298,6 +309,7 @@ def cmd_claim(args: argparse.Namespace) -> int:
         print(f"place: {sheet_id} {col}_{row}")
         kind = _source_ready(sheet, sheet_id)
         token = require_token()
+        require_terms()
     else:
         sheet_id = args.sheet
         _status, body = api.get(f"/v1/grid/{sheet_id}", token=config.read_token())
@@ -305,6 +317,7 @@ def cmd_claim(args: argparse.Namespace) -> int:
         sheet = _object(payload.get("sheet"), "sheet")
         kind = _source_ready(sheet, sheet_id)
         token = require_token()
+        require_terms()
         if args.next:
             col, row = pick_next(sheet, _rows(payload.get("cells"), "cells"))
         else:
@@ -393,6 +406,13 @@ def cmd_whoami(args: argparse.Namespace) -> int:
     approved = payload.get("approved_count")
     if isinstance(approved, int) and not isinstance(approved, bool):
         print(f"approved: {approved}")
+    accepted = config.read_terms()
+    if login.terms_current():
+        print(f"terms: accepted {accepted}")
+    elif accepted is None:
+        print("terms: not accepted: run rutor terms before a claim or an upload")
+    else:
+        print(f"terms: accepted {accepted}, today's are {login.TERMS_VERSION}: run rutor terms before a claim or an upload")
     return 0
 
 
@@ -1026,6 +1046,7 @@ def _read_manifest(path: Path) -> dict[str, object]:
 
 def cmd_upload(args: argparse.Namespace) -> int:
     token = require_token()
+    require_terms()
     col, row = parse_cell(args.cell)
     directory = config.work_dir(args.sheet)
     png = directory / f"{col}_{row}.png"

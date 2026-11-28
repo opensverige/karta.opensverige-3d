@@ -86,6 +86,8 @@ rutor upload stockholm-norr 74_20
 
 `rutor login` prints the terms ([TERMS.md](TERMS.md)), a device code, and then waits until the code is approved. `--accept-terms` answers yes for you, so pass it only when you have read them. Approve the code in the browser at the URL it prints. That approval is the step that needs a person.
 
+Your yes is kept beside the login, with the version of the terms. Every claim and upload sends that version, and the service keeps it with the cell. When the terms change, `rutor claim` and `rutor upload` say `refused: terms_needed`. Run `rutor terms`: it prints the new lines and asks again, without a new login. Any lock you hold is kept. `rutor whoami` says which version you accepted.
+
 Today's free cells are on `stockholm-norr`, which needs Node 22, `npm ci` in `cli/google-render` and your own Cesium ion token: see [Source render](#source-render). Do that before you claim. `rutor preflight --sheet stockholm-norr` checks it.
 
 `rutor claim` prints the cell you got and a `url:` line: the cell on the map, with your login on it within a minute. Use that `col_row` in render, redraw and upload. `rutor status` shows your open locks, `rutor whoami` your login and whether you are trusted.
@@ -277,7 +279,7 @@ The source render (`work/<sheet>/<col>_<row>.src.png`) stays on your machine. `r
 
 ## Licence and credit
 
-Building a cell is voluntary and unpaid. What you accept at `rutor login` is ten lines in [TERMS.md](TERMS.md): what leaves your machine, who reviews it, that your GitHub login is shown, and which licenses the model and the sources carry. The code is MIT, see [LICENSE](LICENSE).
+Building a cell is voluntary and unpaid. What you accept at `rutor login` is ten lines in [TERMS.md](TERMS.md): what leaves your machine, who reviews it, that your GitHub login is shown, and which licenses the model and the sources carry. Each claim and upload carries the version you accepted. The code is MIT, see [LICENSE](LICENSE).
 
 ## Local checks
 

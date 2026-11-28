@@ -4,6 +4,7 @@ import { LOCK_HOURS, claimCell, lockLimit, releaseCell } from '../src/cells.js';
 import { getGrid } from '../src/sheets.js';
 import { nearestCell, sheetAt } from '../src/tiling.js';
 import { NOW, call, clearDb, getCell, insertCells, insertSheet, insertUser, rowCounts, setCell, stubOutside } from './fixtures.js';
+import { TERMS_VERSION } from '../src/terms.js';
 
 const user = { github_id: 4242, login: 'klang', first_seen: NOW, approved_count: 0, trusted: 0, blocked: 0 };
 const other = { github_id: 7, login: 'ebba', first_seen: NOW, approved_count: 12, trusted: 1, blocked: 0 };
@@ -136,7 +137,7 @@ describe('releaseCell', () => {
 describe('routes', () => {
   function asUser(path, body) {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ id: 4242, login: 'klang' }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    return call(new Request(`https://x/v1/${path}`, { method: 'POST', headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+    return call(new Request(`https://x/v1/${path}`, { method: 'POST', headers: { Authorization: 'Bearer t', 'X-Terms-Version': TERMS_VERSION, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
   }
 
   it('POST /v1/claim answers 201 with expires_at and validates the body', async () => {
@@ -304,7 +305,7 @@ describe('a cell on a sheet of the tiling', () => {
     expect(before.cells).toEqual([]);
     expect(before.sheet).toMatchObject({ id: HBG, cols: 61, rows: 47, kind: 'google', made: 'grid', state: 'open', ground_height: 0, y_meters: 6016, pipeline: env.PIPELINE_NOW });
     expect(await sheetRow()).toBeNull();
-    const claimed = await call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: HBG, col: 47, row: 16, kind: 'google' }) }));
+    const claimed = await call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'X-Terms-Version': TERMS_VERSION, 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: HBG, col: 47, row: 16, kind: 'google' }) }));
     expect(claimed.status).toBe(201);
     expect(await claimed.json()).toMatchObject({ sheet: HBG, col: 47, row: 16, expires_at: expect.stringMatching(/Z$/) });
     const grid = await call(new Request(`https://x/v1/grid/${HBG}`));
@@ -316,7 +317,7 @@ describe('a cell on a sheet of the tiling', () => {
 
   it('answers 503 with a time to try again when the height cannot be had', async () => {
     stubOutside('down');
-    const r = await call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: HBG, col: 47, row: 16, kind: 'google' }) }));
+    const r = await call(new Request('https://x/v1/claim', { method: 'POST', headers: { Authorization: 'Bearer t', 'X-Terms-Version': TERMS_VERSION, 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: HBG, col: 47, row: 16, kind: 'google' }) }));
     expect(r.status).toBe(503);
     expect(r.headers.get('Retry-After')).toBe('60');
     expect((await r.json()).error).toBe('no_height');
