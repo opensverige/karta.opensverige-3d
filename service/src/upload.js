@@ -6,7 +6,7 @@
    part, so two requests never share a key, not even with the same bytes. A request that loses
    its lock half-way deletes only its own key. */
 
-import { requireAdmin, requireUser } from './auth.js';
+import { requireIntake, requireUser } from './auth.js';
 import { logEvent } from './cells.js';
 import { error, json } from './db.js';
 
@@ -261,7 +261,7 @@ export const uploadRoute = requireUser(async (request, env, ctx, params, now, us
 });
 
 /** GET /v1/inkorg/:sheet/:col_:row.(png|json), admin only: the cell's current upload. */
-export const inkorgRoute = requireAdmin(async (request, env, ctx, params) => {
+export const inkorgRoute = requireIntake(async (request, env, ctx, params) => {
   const cell = await env.DB.prepare('SELECT inbox_key FROM cells WHERE sheet = ? AND col = ? AND row = ?')
     .bind(params.sheet, Number(params.col), Number(params.row))
     .first();

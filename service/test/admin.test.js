@@ -178,3 +178,69 @@ describe('admin routes', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('the intake key', () => {
+  const KEY = 'k'.repeat(40);
+
+  function withKey(path, method = 'GET', body = undefined, overrides = {}, key = KEY) {
+    // GitHub must not be asked for the key. A non-admin answers when it is, so a wrong key is refused.
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ id: 4242, login: 'klang' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const init = { method, headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' } };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    return call(new Request(`https://x/v1/${path}`, init), { ADMIN_GITHUB_ID: '1', INTAG_NYCKEL: KEY, ...overrides });
+  }
+
+  it('reads the queue and the inbox and marks cells live, in the admin name', async () => {
+    await insertUser({ github_id: 1, login: 'gustaf' });
+    await uploaded(1, 1, 'godkand');
+    const q = await withKey('queue?state=godkand');
+    expect(q.status).toBe(200);
+    expect((await q.json()).cells).toHaveLength(1);
+    const png = await withKey('inkorg/goteborg-norr/1_1.png');
+    expect(png.status).toBe(200);
+    const live = await withKey('live', 'POST', { sheet: 'goteborg-norr', cells: [[1, 1]], rev: 2 });
+    expect(live.status).toBe(200);
+    expect(await getCell('goteborg-norr', 1, 1)).toMatchObject({ state: 'live' });
+    const { results } = await env.DB.prepare("SELECT action FROM events WHERE github_id = 1 ORDER BY id").all();
+    expect(results.map((r) => r.action)).toEqual(['live']);
+    vi.unstubAllGlobals();
+  });
+
+  it('may not approve, reject, trust or block: those stay with a person', async () => {
+    await insertUser({ github_id: 1, login: 'gustaf' });
+    await uploaded(1, 1);
+    for (const [path, body] of [
+      ['approve', { sheet: 'goteborg-norr', col: 1, row: 1 }],
+      ['reject', { sheet: 'goteborg-norr', col: 1, row: 1, comment: 'x' }],
+      ['trust', { login: 'klang', trusted: 1 }],
+      ['block', { login: 'klang', blocked: 1 }],
+    ]) {
+      const r = await withKey(path, 'POST', body);
+      expect(r.status, path).toBe(403);
+    }
+    expect(await getCell('goteborg-norr', 1, 1)).toMatchObject({ state: 'vantar' });
+    vi.unstubAllGlobals();
+  });
+
+  it('a wrong key, or a key in the service shorter than 32, is no key', async () => {
+    await insertUser({ github_id: 1, login: 'gustaf' });
+    expect((await withKey('queue?state=vantar', 'GET', undefined, {}, 'x'.repeat(40))).status).toBe(403);
+    expect((await withKey('queue?state=vantar', 'GET', undefined, { INTAG_NYCKEL: 'kort' }, 'kort')).status).toBe(403);
+    vi.unstubAllGlobals();
+  });
+
+  it('passes the rate limit on its own routes, and only there', async () => {
+    await insertUser({ github_id: 1, login: 'gustaf' });
+    const over = { TAKT: { limit: async () => ({ success: false }) } };
+    expect((await withKey('queue?state=vantar', 'GET', undefined, over)).status).toBe(200);
+    expect((await withKey('claim', 'POST', { sheet: 'goteborg-norr', col: 1, row: 1 }, over)).status).toBe(429);
+    vi.unstubAllGlobals();
+  });
+
+  it('without the admin row the service says it is set up wrongly', async () => {
+    const r = await withKey('queue?state=vantar');
+    expect(r.status).toBe(503);
+    expect((await r.json()).error).toBe('misconfigured');
+    vi.unstubAllGlobals();
+  });
+});

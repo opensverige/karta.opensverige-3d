@@ -1,7 +1,7 @@
 /* The admin's side: approve, reject, trust, block, the queue, and the intake reporting cells
    live. Every action is one line in the event log. */
 
-import { requireAdmin } from './auth.js';
+import { requireAdmin, requireIntake } from './auth.js';
 import { logEvent, readCellBody } from './cells.js';
 import { error, json, nowIso } from './db.js';
 
@@ -298,14 +298,14 @@ export const trustRoute = flagRoute('trusted', setTrust);
 export const blockRoute = flagRoute('blocked', setBlock);
 
 /** GET /v1/queue?state=vantar|godkand|removed */
-export const queueRoute = requireAdmin(async (request, env) => {
+export const queueRoute = requireIntake(async (request, env) => {
   const state = new URL(request.url).searchParams.get('state') || 'vantar';
   if (!['vantar', 'godkand', 'removed'].includes(state)) return error(400, 'bad_state', 'state must be vantar, godkand or removed.');
   return json(200, { state, cells: await listQueue(env.DB, state) }, { 'Cache-Control': 'private, no-store' });
 });
 
 /** POST /v1/live */
-export const liveRoute = requireAdmin(async (request, env, ctx, params, now, admin) => {
+export const liveRoute = requireIntake(async (request, env, ctx, params, now, admin) => {
   const body = await request.json().catch(() => null);
   const cellsOk = body && Array.isArray(body.cells) && body.cells.every((c) => Array.isArray(c) && c.length === 2 && Number.isInteger(c[0]) && Number.isInteger(c[1]));
   // An empty list would move the revision with no cell, and a revision beyond what a whole
@@ -320,7 +320,7 @@ export const liveRoute = requireAdmin(async (request, env, ctx, params, now, adm
 });
 
 /** POST /v1/blanked */
-export const blankedRoute = requireAdmin(async (request, env, ctx, params, now, admin) => {
+export const blankedRoute = requireIntake(async (request, env, ctx, params, now, admin) => {
   const body = await request.json().catch(() => null);
   const cellsOk = body && Array.isArray(body.cells) && body.cells.every((c) => Array.isArray(c) && c.length === 2 && Number.isInteger(c[0]) && Number.isInteger(c[1]));
   if (!cellsOk || typeof body.sheet !== 'string') return error(400, 'bad_body', 'Send JSON with sheet and cells as [[col,row],...].');
