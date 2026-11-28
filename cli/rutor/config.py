@@ -52,6 +52,33 @@ def write_token(token: str) -> None:
     _write_secret(token_path(), token)
 
 
+# Which version of TERMS.md this person said yes to on this machine, and when. It sits beside
+# the login: a login is made once, and the terms can change after it. Not a secret.
+TERMS_VERSION_SHAPE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def terms_path() -> Path:
+    return home() / "terms.json"
+
+
+def read_terms() -> str | None:
+    """The terms version accepted here, or None when there is none or the file is not ours."""
+    try:
+        found = json.loads(terms_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    version = found.get("version") if isinstance(found, dict) else None
+    return version if isinstance(version, str) and TERMS_VERSION_SHAPE.fullmatch(version) else None
+
+
+def write_terms(version: str, accepted_at: str) -> None:
+    if not TERMS_VERSION_SHAPE.fullmatch(version):
+        raise bad_input(f"a terms version looks like 2026-11-25, not {version!r}")
+    path = terms_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": version, "accepted_at": accepted_at}) + "\n", encoding="utf-8")
+
+
 # The contributor's own Cesium ion token. The renderer reads it from this variable. A person
 # who uses the app page pastes it there once instead, and it is kept beside the login.
 CESIUM_TOKEN_ENV = "CESIUM_ION_TOKEN"

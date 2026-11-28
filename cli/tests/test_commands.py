@@ -12,11 +12,12 @@ from pathlib import Path
 
 from unittest.mock import patch
 
-from rutor import commands
+from rutor import commands, config
 from rutor.__main__ import main
 from rutor.config import write_token
 from rutor.errors import RutorError, network
 from rutor.renderer import google, sources
+from rutor.login import TERMS, TERMS_VERSION, keep_terms
 from tests.fake_service import FakeService
 from tests.png import minimal_png
 
@@ -40,6 +41,8 @@ class _ServiceCase(unittest.TestCase):
         os.environ["PIXELBYGGET_HOME"] = self.tmp.name
         os.environ["PIXELBYGGET_URL"] = self.svc.start()
         write_token("test-token")
+        # A builder who said yes to today's terms, as a claim and an upload need.
+        keep_terms()
 
     def tearDown(self) -> None:
         self.svc.stop()
@@ -149,6 +152,53 @@ class CommandTests(_ServiceCase):
             "error: refused: taken: goteborg-norr 0_0 is locked by other. "
             "For a free cell beside what is drawn there: rutor claim goteborg-norr --next.\n",
         )
+
+    def claims(self) -> list[dict[str, object]]:
+        return [r for r in self.svc.requests if r.get("method") == "POST" and r.get("path") == "/v1/claim"]
+
+    def test_a_claim_says_which_terms_its_person_accepted(self) -> None:
+        self.open_sheet({"goteborg-norr/0_0": _cell(0, 0, "fri")})
+        code, _out, err = self.run_cmd(["claim", "goteborg-norr", "0_0"])
+        self.assertEqual((code, err), (0, ""))
+        headers = {str(key).lower(): value for key, value in dict(self.claims()[0]["headers"]).items()}
+        self.assertEqual(headers.get("x-terms-version"), TERMS_VERSION)
+
+    def test_no_claim_is_sent_until_rutor_terms_has_a_yes_to_todays(self) -> None:
+        self.open_sheet({"goteborg-norr/0_0": _cell(0, 0, "fri")})
+        for kept in (None, "2026-11-23"):
+            with self.subTest(kept=kept):
+                config.terms_path().unlink(missing_ok=True)
+                if kept is not None:
+                    config.write_terms(kept, "2026-11-23T10:00:00Z")
+                code, _out, err = self.run_cmd(["claim", "goteborg-norr", "0_0"])
+                self.assertEqual(code, 2)
+                self.assertEqual(
+                    err,
+                    f"error: refused: terms_needed: say yes to the terms of {TERMS_VERSION} first: run rutor terms. Any lock you hold is kept.\n",
+                )
+                self.assertEqual(self.claims(), [])
+        # rutor terms takes the yes without a login: it asks nothing of the service or GitHub.
+        asked = len(self.svc.requests)
+        with patch("rutor.login.start_device_flow") as device:
+            code, out, err = self.run_cmd(["terms", "--accept"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertTrue(out.startswith(TERMS + "\n"), out)
+        self.assertTrue(out.endswith(f"terms: accepted {TERMS_VERSION}\n"), out)
+        device.assert_not_called()
+        self.assertEqual(len(self.svc.requests), asked)
+        self.assertEqual(config.read_terms(), TERMS_VERSION)
+        code, _out, err = self.run_cmd(["claim", "goteborg-norr", "0_0"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(len(self.claims()), 1)
+
+    def test_rutor_terms_without_a_terminal_needs_the_flag_and_keeps_nothing(self) -> None:
+        config.terms_path().unlink()
+        with patch("sys.stdin.isatty", return_value=False):
+            code, out, err = self.run_cmd(["terms"])
+        self.assertEqual(code, 1)
+        self.assertIn(TERMS, out)
+        self.assertEqual(err, "error: Pass --accept to accept the terms.\n")
+        self.assertIsNone(config.read_terms())
 
     def test_a_taken_cell_that_waits_for_review_says_so_and_whose_it_is(self) -> None:
         # The service's sentence was "Someone else holds that cell", also for the asker's own.

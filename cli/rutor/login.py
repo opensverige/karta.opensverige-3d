@@ -11,17 +11,22 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from rutor import __version__
 from rutor.api import get
-from rutor.config import github_client_id, write_token
+from rutor.config import github_client_id, read_terms, write_terms, write_token
 from rutor.errors import RutorError, bad_input, environment, network, refused
 
 DEVICE_CODE_URL = "https://github.com/login/device/code"
 ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 DEVICE_URL = "https://github.com/login/device"
 
-# The four points from the design, section 8.
+# The `Version` line of TERMS.md. The service holds the same date in service/src/terms.js and
+# refuses a claim or an upload whose rutor says an older one; a test holds the three together.
+# A change to the ten lines needs a new date, and then everyone is asked again.
+TERMS_VERSION = "2026-11-25"
+
 # The same ten lines as TERMS.md at the repository root; a test holds the two together.
 TERMS = "\n".join(
     [
@@ -135,23 +140,45 @@ def poll_for_token(
         raise environment(f"GitHub login failed ({error}). Run rutor login again.")
 
 
-def _accepted(args: argparse.Namespace) -> None:
-    # Always shown, so an agent that passes --accept-terms has still put them in front of its human.
+def terms_current() -> bool:
+    """Whether this person has said yes, on this machine, to today's terms or newer ones."""
+    accepted = read_terms()
+    return accepted is not None and accepted >= TERMS_VERSION
+
+
+def ask_terms(accept: bool, flag: str) -> None:
+    """Show the ten lines and take the yes, which is kept as the version and the moment.
+
+    Always shown, so an agent that passes `flag` has still put them in front of its human.
+    """
     print(TERMS, flush=True)
-    if args.accept_terms:
-        return
-    if not sys.stdin.isatty():
-        raise bad_input("Pass --accept-terms to accept the terms and log in.")
-    answer = input("accept? (yes/no): ")
-    if answer.strip().lower() not in {"y", "yes", "ja"}:
-        raise bad_input("The terms were not accepted.")
+    if not accept:
+        if not sys.stdin.isatty():
+            raise bad_input(f"Pass {flag} to accept the terms.")
+        answer = input("accept? (yes/no): ")
+        if answer.strip().lower() not in {"y", "yes", "ja"}:
+            raise bad_input("The terms were not accepted.")
+    keep_terms()
+
+
+def keep_terms() -> None:
+    """Keep the yes to today's terms on this machine, with the moment it was given."""
+    write_terms(TERMS_VERSION, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+
+def cmd_terms(args: argparse.Namespace) -> int:
+    # A new yes without a new login: a login spends one of the ten GitHub keeps per person and
+    # app, and the eleventh ends an older one, perhaps one that works on another machine.
+    ask_terms(args.accept, "--accept")
+    print(f"terms: accepted {TERMS_VERSION}")
+    return 0
 
 
 def cmd_login(args: argparse.Namespace) -> int:
     client_id = github_client_id()
     if not client_id.strip():
         raise environment("PIXELBYGGET_GITHUB_CLIENT_ID is set but empty. Unset it or give a client id.")
-    _accepted(args)
+    ask_terms(args.accept_terms, "--accept-terms")
     started = start_device_flow(client_id)
     user_code = started.get("user_code")
     device_code = started.get("device_code")
@@ -175,3 +202,11 @@ def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     parser = sub.add_parser("login", help="Log in with GitHub and save the token")
     parser.add_argument("--accept-terms", action="store_true", help="accept the contribution terms")
     parser.set_defaults(func=cmd_login)
+
+    terms = sub.add_parser(
+        "terms",
+        help="read the terms and say yes to them",
+        description="Print the ten lines of TERMS.md and keep your yes. A claim and an upload need a yes to today's terms; this gives it without a new login.",
+    )
+    terms.add_argument("--accept", action="store_true", help="accept the terms without the question: only after your human said yes")
+    terms.set_defaults(func=cmd_terms)

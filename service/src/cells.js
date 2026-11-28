@@ -3,6 +3,7 @@
 
 import { requireUser } from './auth.js';
 import { error, json } from './db.js';
+import { acceptedTerms, termsRefusal } from './terms.js';
 import { cellAt, cellCentre, gridRow, groundHeight, owns, sheetAt, sheetById } from './tiling.js';
 
 export const LOCK_HOURS = 48;
@@ -98,9 +99,10 @@ async function makeGridCell(db, env, user, tile, sheetMissing, col, row, now) {
  * @param {string} now
  * @param {import('./db.js').Env} [env] read only when a sheet of the tiling gets its row
  * @param {string} [kind] the source the client says it will draw the sheet from
+ * @param {string} [terms] the terms version the caller accepted, kept with the claim's event
  * @returns {Promise<{ ok: true, expires_at: string } | { ok: false, status: number, code: string, message?: string }>}
  */
-export async function claimCell(db, user, sheet, col, row, now, env = {}, kind = undefined) {
+export async function claimCell(db, user, sheet, col, row, now, env = {}, kind = undefined, terms = undefined) {
   const sheetRow = await db.prepare('SELECT id, state, made, kind FROM sheets WHERE id = ?').bind(sheet).first();
   // A row made by hand keeps to its own cells, whatever its id looks like.
   const tile = !sheetRow || sheetRow.made === 'grid' ? sheetById(sheet) : null;
@@ -142,7 +144,7 @@ export async function claimCell(db, user, sheet, col, row, now, env = {}, kind =
     if (after && after.state === 'fri') return { ok: false, status: 403, code: 'too_many_locks' };
     return { ok: false, status: 409, code: 'taken' };
   }
-  await logEvent(db, { at: now, github_id: user.github_id, login: user.login, action: 'claim', sheet, col, row });
+  await logEvent(db, { at: now, github_id: user.github_id, login: user.login, action: 'claim', sheet, col, row, detail: terms ? `terms ${terms}` : null });
   return { ok: true, expires_at };
 }
 
@@ -211,9 +213,11 @@ export async function readCellBody(request) {
 
 /** POST /v1/claim */
 export const claimRoute = requireUser(async (request, env, ctx, params, now, user) => {
+  const terms = acceptedTerms(request);
+  if (!terms) return termsRefusal();
   const body = await readCellBody(request);
   if (!body) return error(400, 'bad_body', 'Send JSON with sheet, col and row (integers from 0), and kind as open or google when you send it.');
-  const r = await claimCell(env.DB, user, body.sheet, body.col, body.row, now, env, body.kind);
+  const r = await claimCell(env.DB, user, body.sheet, body.col, body.row, now, env, body.kind, terms);
   if (!r.ok) return error(r.status, r.code, r.message || MESSAGES[r.code], r.status === 503 ? { 'Retry-After': '60' } : {});
   return json(201, { sheet: body.sheet, col: body.col, row: body.row, expires_at: r.expires_at });
 });

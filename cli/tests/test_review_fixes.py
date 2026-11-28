@@ -22,13 +22,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from rutor import api, commands, pipeline, redraw_core, se3_price
+from rutor import api, commands, config, pipeline, redraw_core, se3_price
 from rutor.__main__ import main
 from rutor.config import write_token
 from rutor.errors import RutorError
 from rutor.manifest import sha256_file
 from rutor.render import camera_for
 from rutor.renderer import sources
+from rutor.login import TERMS_VERSION, keep_terms
 from tests.fake_service import FakeService
 from tests.png import minimal_png
 
@@ -145,6 +146,8 @@ class ServiceCase(unittest.TestCase):
         os.environ["PIXELBYGGET_HOME"] = self.tmp.name
         os.environ["PIXELBYGGET_URL"] = self.svc.start()
         write_token("test-token")
+        # A builder who said yes to today's terms, as a claim and an upload need.
+        keep_terms()
         self._root_patch = patch("rutor.config.repo_root", return_value=self.root)
         self._root_patch.start()
 
@@ -655,19 +658,32 @@ class WhoamiTests(ServiceCase):
         self.svc.state["user"] = {"login": "klang", "github_id": 4242, "trusted": 1, "approved_count": 3}
         code, out, err = self.run_cmd(["whoami"])
         self.assertEqual((code, err), (0, ""))
-        self.assertEqual(out, "login: klang\ntrusted: yes\napproved: 3\n")
+        self.assertEqual(out, f"login: klang\ntrusted: yes\napproved: 3\nterms: accepted {TERMS_VERSION}\n")
 
     def test_an_untrusted_login_says_no(self) -> None:
         self.svc.state["user"] = {"login": "klang", "github_id": 4242, "trusted": 0, "approved_count": 0}
         code, out, err = self.run_cmd(["whoami"])
         self.assertEqual((code, err), (0, ""))
-        self.assertEqual(out, "login: klang\ntrusted: no\napproved: 0\n")
+        self.assertEqual(out, f"login: klang\ntrusted: no\napproved: 0\nterms: accepted {TERMS_VERSION}\n")
 
     def test_no_trust_lines_when_the_service_does_not_send_the_fields(self) -> None:
         self.svc.state["user"] = {"login": "klang"}
         code, out, err = self.run_cmd(["whoami"])
         self.assertEqual((code, err), (0, ""))
-        self.assertEqual(out, "login: klang\n")
+        self.assertEqual(out, f"login: klang\nterms: accepted {TERMS_VERSION}\n")
+
+    def test_whoami_says_when_the_terms_need_a_yes(self) -> None:
+        self.svc.state["user"] = {"login": "klang"}
+        config.terms_path().unlink()
+        code, out, err = self.run_cmd(["whoami"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out, "login: klang\nterms: not accepted: run rutor terms before a claim or an upload\n")
+        config.write_terms("2026-11-23", "2026-11-23T10:00:00Z")
+        code, out, err = self.run_cmd(["whoami"])
+        self.assertEqual(
+            out,
+            f"login: klang\nterms: accepted 2026-11-23, today's are {TERMS_VERSION}: run rutor terms before a claim or an upload\n",
+        )
 
 
 if __name__ == "__main__":

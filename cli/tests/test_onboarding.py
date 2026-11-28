@@ -20,6 +20,7 @@ from rutor.__main__ import main
 from rutor.config import write_token
 from rutor.errors import RutorError, network
 from rutor.renderer import google
+from rutor.login import keep_terms
 from tests.fake_service import FakeService
 from tests.test_google_render import _installed
 
@@ -56,6 +57,8 @@ class OutputReachesAnAgentTests(unittest.TestCase):
             patch.object(login, "start_device_flow", return_value=started),
             patch.object(login, "poll_for_token", side_effect=poll),
             patch.object(login, "write_token"),
+            # Nothing is written to the home of whoever runs the tests.
+            patch.object(login, "keep_terms"),
             patch.object(login, "get", return_value=(200, {"login": "klang"})),
             redirect_stdout(out),
         ):
@@ -229,6 +232,8 @@ class CommandsBeforeALockTests(unittest.TestCase):
         os.environ["PIXELBYGGET_HOME"] = self.tmp.name
         os.environ["PIXELBYGGET_URL"] = self.svc.start()
         write_token("test-token")
+        # A builder who said yes to today's terms, as a claim and an upload need.
+        keep_terms()
         self.svc.state["sheets"] = {
             "stockholm-norr": {"id": "stockholm-norr", "name": "Stockholm", "state": "open", "cols": 4, "rows": 4},
         }

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
+import re
 import unittest
 from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
@@ -14,7 +16,7 @@ from rutor.config import github_client_id
 from rutor.errors import RutorError
 from pathlib import Path
 
-from rutor.login import TERMS, poll_for_token, start_device_flow
+from rutor.login import TERMS, TERMS_VERSION, poll_for_token, start_device_flow
 
 Http = Callable[[str, dict[str, str]], dict[str, object]]
 
@@ -154,6 +156,28 @@ class LoginTests(unittest.TestCase):
         )
         written = (Path(__file__).resolve().parents[2] / "TERMS.md").read_text(encoding="utf-8")
         self.assertIn("Version 2026-11-25.", written)
+
+    def test_one_terms_version_in_terms_md_the_cli_and_the_service(self) -> None:
+        # The service refuses a claim whose rutor says an older version than its own, so the
+        # three dates move together or a builder is refused for terms they have accepted.
+        root = Path(__file__).resolve().parents[2]
+        written = (root / "TERMS.md").read_text(encoding="utf-8")
+        self.assertIn(f"Version {TERMS_VERSION}.", written)
+        service = (root / "service" / "src" / "terms.js").read_text(encoding="utf-8")
+        found = re.search(r"export const TERMS_VERSION = '([0-9-]+)';", service)
+        self.assertIsNotNone(found)
+        assert found is not None
+        self.assertEqual(found.group(1), TERMS_VERSION)
+
+    def test_the_ten_lines_change_only_with_a_new_version(self) -> None:
+        # Every builder said yes to one text under one date. A new text under the old date
+        # would be one nobody is asked about: give it a new date, in all three places, and
+        # add its digest here.
+        pinned = {
+            "2026-11-25": "8591b948a44becdc69f69a27645a8a75adb989b34c8688f14d7dcbf228465bca",
+        }
+        self.assertIn(TERMS_VERSION, pinned, "a new terms version: add its digest here")
+        self.assertEqual(hashlib.sha256(TERMS.encode("utf-8")).hexdigest(), pinned[TERMS_VERSION])
 
     def test_login_requires_accept_terms_or_prints_terms(self) -> None:
         os.environ["PIXELBYGGET_GITHUB_CLIENT_ID"] = "Iv1.real"

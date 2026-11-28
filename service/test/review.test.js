@@ -12,6 +12,7 @@ import { clearPublicCache } from '../src/index.js';
 import { inboxKey, inspectPng } from '../src/upload.js';
 import { NOW, call, clearDb, getCell, insertCells, insertSheet, insertUser, setCell } from './fixtures.js';
 import { manifestHeader, minimalPng, pngChunk, sha256Hex } from './png.js';
+import { TERMS_VERSION } from '../src/terms.js';
 
 const user = { github_id: 4242, login: 'klang', first_seen: NOW, approved_count: 0, trusted: 0, blocked: 0 };
 const other = { github_id: 5151, login: 'vind', first_seen: NOW, approved_count: 0, trusted: 0, blocked: 0 };
@@ -26,6 +27,7 @@ function uploadRequest(bytes, manifest, headers = {}) {
     method: 'PUT',
     headers: {
       Authorization: 'Bearer t',
+      'X-Terms-Version': TERMS_VERSION,
       'Content-Type': 'image/png',
       'Content-Length': String(bytes.length),
       'X-Manifest': manifest,

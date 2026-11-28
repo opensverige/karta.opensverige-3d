@@ -18,6 +18,7 @@ from unittest.mock import patch
 from rutor import api, commands, config, pipeline
 from rutor.__main__ import main
 from rutor.errors import RutorError
+from rutor.login import keep_terms
 from tests.fake_service import FakeService
 
 
@@ -394,6 +395,8 @@ class ClaimTests(_Env):
         self.svc = FakeService()
         os.environ["PIXELBYGGET_URL"] = self.svc.start()
         config.write_token("test-token")
+        # A builder who said yes to today's terms, as a claim and an upload need.
+        keep_terms()
         self.svc.state["sheets"] = {"goteborg-norr": {"id": "goteborg-norr", "name": "Göteborg", "state": "open", "cols": 3, "rows": 3}}
         self.svc.state["cells"] = {
             "goteborg-norr/1_1": {"sheet": "goteborg-norr", "col": 1, "row": 1, "state": "fri", "login": None, "updated": 0}

@@ -14,7 +14,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rutor.__main__ import main
+from rutor import config
 from rutor.config import write_token
+from rutor.login import TERMS_VERSION, keep_terms
 from tests.fake_service import FakeService
 from tests.png import minimal_png
 from tests.test_check import AVAILABLE as DRAWING
@@ -45,6 +47,8 @@ class UploadTests(unittest.TestCase):
         os.environ["PIXELBYGGET_HOME"] = self.tmp.name
         os.environ["PIXELBYGGET_URL"] = self.svc.start()
         write_token("test-token")
+        # A builder who said yes to today's terms, as a claim and an upload need.
+        keep_terms()
         self._root_patch = patch("rutor.config.repo_root", return_value=self.root)
         self._root_patch.start()
 
@@ -138,6 +142,25 @@ class UploadTests(unittest.TestCase):
         decoded = json.loads(base64.b64decode(found))
         self.assertEqual(decoded["width"], 1536)
         self.assertEqual(decoded["pipeline"], "2026.11-a")
+
+    def test_an_upload_says_which_terms_its_person_accepted(self) -> None:
+        self.write_pair(1536, 1536)
+        code, _out, err = self.run_cmd(["upload", "goteborg-norr", "64_59"])
+        self.assertEqual((code, err), (0, ""))
+        puts = [item for item in self.svc.requests if item.get("method") == "PUT"]
+        headers = {str(key).lower(): value for key, value in dict(puts[0]["headers"]).items()}
+        self.assertEqual(headers.get("x-terms-version"), TERMS_VERSION)
+
+    def test_nothing_is_uploaded_without_a_yes_to_todays_terms(self) -> None:
+        self.write_pair(1536, 1536)
+        config.write_terms("2026-11-23", "2026-11-23T10:00:00Z")
+        code, _out, err = self.run_cmd(["upload", "goteborg-norr", "64_59"])
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err,
+            f"error: refused: terms_needed: say yes to the terms of {TERMS_VERSION} first: run rutor terms. Any lock you hold is kept.\n",
+        )
+        self.assertEqual([item for item in self.svc.requests if item.get("method") == "PUT"], [])
 
     def test_manifest_mismatch_fails_locally(self) -> None:
         self.write_pair(1024, 1536)

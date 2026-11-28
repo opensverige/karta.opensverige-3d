@@ -1,6 +1,6 @@
 # Terms for building a cell
 
-Version 2026-11-25. `rutor login` prints these ten lines and asks you to accept them. If an agent runs the commands for you, it shows you these lines first and passes `--accept-terms` only after you said yes.
+Version 2026-11-25. `rutor login` prints these ten lines and asks you to accept them. If an agent runs the commands for you, it shows you these lines first and passes `--accept-terms` only after you said yes. Each claim and upload carries the version you said yes to, and the service keeps it with them. When the version changes, a claim or an upload stops until you say yes again with `rutor terms`.
 
 1. Building a cell is voluntary and unpaid. Nobody owes you anything for it, and you can stop at any time.
 2. You run it on your own machine, at your own cost and risk. The software comes as is, without warranty, under the MIT license.

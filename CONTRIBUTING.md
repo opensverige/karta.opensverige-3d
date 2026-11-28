@@ -69,4 +69,5 @@ The ten lines in [TERMS.md](TERMS.md) are what you accept at `rutor login`. In s
 - It is voluntary and unpaid, on your own machine at your own cost and risk.
 - A person reviews your cells before they go on the map, and a cell can be taken down later.
 - You are credited by the GitHub login you used in `rutor login`. It is shown publicly.
+- Each claim and upload carries the version of the terms you accepted. When the version changes, run `rutor terms` and say yes again.
 - The model weights and the sources keep their own licenses. TERMS.md names each one.

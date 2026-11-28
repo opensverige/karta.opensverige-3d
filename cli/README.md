@@ -31,7 +31,7 @@ rutor redraw stockholm-norr 74_20
 rutor upload stockholm-norr 74_20
 ```
 
-Replace `74_20` with the cell `rutor claim` prints. `rutor claim --at <lat>,<lon>` takes the cell at a place instead, anywhere in Sweden where Google has 3D tiles and the map is not drawn yet. `stockholm-norr` needs your own Cesium ion token: see the main README. `rutor preflight --machine` checks python, the graphics card and the disk, with no login. `rutor login` prints the terms in [TERMS.md](../TERMS.md). `rutor preflight --sheet stockholm-norr` should be `ok` on every line before `rutor claim`.
+Replace `74_20` with the cell `rutor claim` prints. `rutor claim --at <lat>,<lon>` takes the cell at a place instead, anywhere in Sweden where Google has 3D tiles and the map is not drawn yet. `stockholm-norr` needs your own Cesium ion token: see the main README. `rutor preflight --machine` checks python, the graphics card and the disk, with no login. `rutor login` prints the terms in [TERMS.md](../TERMS.md) and keeps your yes in `terms.json` beside the token. When the terms change, `rutor terms` asks again without a new login. `rutor preflight --sheet stockholm-norr` should be `ok` on every line before `rutor claim`.
 
 `rutor login` prints a code and `url: https://github.com/login/device`. A person approves that code in the browser. The token is stored in `~/.config/pixelbygget/token` (override with `PIXELBYGGET_HOME`), mode `0600` on Linux and macOS. `PIXELBYGGET_URL` points the CLI at a service on this machine, for testing. It accepts no other address. That approval is the step that needs a person.
 

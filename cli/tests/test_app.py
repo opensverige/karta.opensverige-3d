@@ -766,7 +766,6 @@ class LoginTests(_OwnHome):
         config.write_token("test-token")
         builder = self._builder()
         self.assertEqual(builder.login_state()["login"], "klang")
-        self.assertTrue(builder.terms_accepted())
         self.assertEqual(self._me_calls(service), 1)
         # The stored login is asked about once. Every later look is the page's own state.
         builder.login_state()
@@ -828,13 +827,24 @@ class LoginTests(_OwnHome):
         builder.shutdown()
         self.assertFalse(fake.runs[0].stopped)
 
-    def test_a_stored_login_counts_as_terms_accepted_at_once(self) -> None:
+    def test_a_stored_login_is_asked_the_terms_until_a_yes_to_todays_is_kept(self) -> None:
+        # The terms can change after a login. A login made under older ones, or before the yes
+        # was kept at all, is shown the terms again, and the yes needs no new login.
         service = FakeService()
         self.addCleanup(service.stop)
         self._set_env("PIXELBYGGET_URL", service.start())
         config.write_token("test-token")
+        fake = FakeStart()
+        builder = self._builder(fake)
         # Asked before anything else: the page draws the terms step from this.
-        self.assertTrue(self._builder().terms_accepted())
+        self.assertFalse(builder.terms_accepted())
+        config.write_terms("2026-11-23", "2026-11-23T10:00:00Z")
+        self.assertFalse(builder.terms_accepted())
+        builder.accept_terms()
+        self.assertTrue(builder.terms_accepted())
+        self.assertEqual(config.read_terms(), login.TERMS_VERSION)
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(builder.login_state()["login"], "klang")
 
     def test_no_login_starts_once_the_page_is_closing(self) -> None:
         fake = FakeStart()
@@ -1703,6 +1713,8 @@ class AppServerTests(_OwnHome):
 
         self.addCleanup(restore_url)
         config.write_token("test-token")
+        # A builder who said yes to today's terms on this machine.
+        login.keep_terms()
         config.write_cesium_token("a.b.c")
         self._put_sheet(list(_SHEET_CELLS))
         machine_patch = patch("rutor.app.machine", return_value=dict(_MACHINE))
@@ -2519,7 +2531,7 @@ class WindowlessTests(_OwnHome):
         self.now = 1000.0
         self.fake = FakeStart()
         self.builder = app.Builder(self.fake, clock=lambda: self.now)
-        self.builder._terms = True
+        self.builder.accept_terms()
         self.builder._login = "klang"
         self.builder._looked = True
         self.opened: list[str] = []
