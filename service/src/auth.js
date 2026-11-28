@@ -140,6 +140,7 @@ async function lookupOwnApp(token, clientId, secret) {
  * @returns {Promise<boolean>}
  */
 export async function isCachedAdmin(request, env) {
+  if (await isIntake(request, env)) return true;
   const token = bearer(request);
   const admin = String(env.ADMIN_GITHUB_ID || '');
   if (!token || !admin || admin === '0') return false;
@@ -213,6 +214,43 @@ export function requireUser(handler) {
     const resolved = await resolveUser(request, env, now);
     if (resolved instanceof Response) return resolved;
     return handler(request, env, ctx, params, now, resolved.user, resolved.isAdmin);
+  };
+}
+
+/** The intake key is this long at least. A shorter one is a mistake, and is not let through. */
+const INTAKE_MIN = 32;
+
+/**
+ * Whether the caller sends the intake key (secret INTAG_NYCKEL). The nightly publication runs on
+ * a machine of its own, where a GitHub login cannot be renewed by hand. Compared as digests, so
+ * the time taken does not say how much of it was right.
+ * @param {Request} request
+ * @param {import('./db.js').Env} env
+ * @returns {Promise<boolean>}
+ */
+export async function isIntake(request, env) {
+  const key = String(env.INTAG_NYCKEL || '');
+  const token = bearer(request);
+  if (key.length < INTAKE_MIN || !token) return false;
+  const [a, b] = await Promise.all([sha256Hex(token), sha256Hex(key)]);
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Like requireAdmin, and the intake key may pass too. Only the routes the publication needs are
+ * wrapped with this: the queue, the inbox, live and blanked. The key acts as the admin, so the
+ * event log names the admin. Approve, reject, trust and block stay with a person.
+ * @param {(request: Request, env: import('./db.js').Env, ctx: ExecutionContext, params: Record<string, string>, now: string, user: import('./db.js').User) => Promise<Response>} handler
+ */
+export function requireIntake(handler) {
+  const asAdmin = requireAdmin(handler);
+  return async (request, env, ctx, params, now = nowIso()) => {
+    if (!(await isIntake(request, env))) return asAdmin(request, env, ctx, params, now);
+    const admin = await env.DB.prepare('SELECT * FROM users WHERE github_id = ?').bind(Number(env.ADMIN_GITHUB_ID || 0)).first();
+    if (!admin) return error(503, 'misconfigured', 'The service is set up wrongly. Try again later.', { 'Retry-After': '300' });
+    return handler(request, env, ctx, params, now, admin);
   };
 }
 
